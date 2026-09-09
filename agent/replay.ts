@@ -1,101 +1,177 @@
 // Standalone viewer: replays a recorded agent/train.ts run through the real,
-// deterministic engine and draws it with the game's own sprites/font -- but
-// never touches src/main.ts's game-state-machine (title/dialogue/etc). Dev
-// only: open via `npm run dev` at /agent/replay.html (Vite serves any file
-// in the project in dev mode; this second HTML entry isn't wired into the
-// production build).
-import bestRuns from "./best-run.json"
-import { CANVAS_W, CANVAS_H, LEVELS, createPlayingState, step, type GameState, type Input } from "../src/engine"
-import { drawSprite, MarioIdle, MarioWalk1, MarioWalk2, MarioJump, Goomba, GoombaSquashed } from "../src/sprites"
+// deterministic engine and draws it with the game's own renderer -- but never
+// touches src/main.ts's game-state-machine (title/dialogue/etc). Dev only:
+// open via `npm run dev` at /agent/replay.html.
+import trainingHistory from "./training-history.json"
+import { LEVELS, createPlayingState, step, type GameState } from "../src/engine"
+import { COLORS, drawScene, drawEntities } from "../src/render"
 import { drawText } from "../src/font"
+import { actionFor, type Genome } from "./policy"
 
-type RecordedRun = { solved: boolean; frames: number; fitness: number; inputs: Input[] }
-const runs = bestRuns as unknown as Record<string, RecordedRun>
+type GenerationRecord = { generation: number; bestFitness: number; meanFitness: number; solved: number; genome: Genome }
+type LevelHistory = { level: number; generations: GenerationRecord[]; bestGeneration: number }
+
+const history = trainingHistory as unknown as { levels: LevelHistory[] }
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game")!
 const ctx = canvas.getContext("2d")!
 ctx.imageSmoothingEnabled = false
 
 const levelButtonsEl = document.querySelector<HTMLDivElement>("#levels")!
+const generationsEl = document.querySelector<HTMLDivElement>("#generations")!
+const chartCanvas = document.querySelector<HTMLCanvasElement>("#chart")!
+const chartCtx = chartCanvas.getContext("2d")!
 const statusEl = document.querySelector<HTMLDivElement>("#status")!
 
-let currentLevel = 0
-let frameIndex = 0
+let levelIndex = 0
+let generationIndex = 0
+let frame = 0
 let state: GameState = createPlayingState(0)
-let playing = true
 
-function loadLevel(levelIndex: number) {
-  currentLevel = levelIndex
-  frameIndex = 0
-  state = createPlayingState(levelIndex)
-  playing = true
+function levelHistory() {
+  return history.levels[levelIndex]
 }
 
-for (let i = 0; i < LEVELS.length; i++) {
-  const btn = document.createElement("button")
-  btn.textContent = `Level ${i + 1}`
-  btn.onclick = () => loadLevel(i)
-  levelButtonsEl.appendChild(btn)
+function currentGeneration() {
+  return levelHistory().generations[generationIndex]
 }
 
-function drawScene(levelIndex: number) {
-  const level = LEVELS[levelIndex]
-  ctx.fillStyle = "#62b9ff"
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
-  for (const p of level.platforms) {
-    ctx.fillStyle = "#42a642"
-    ctx.fillRect(p.x, p.y, p.w, p.h)
-    ctx.fillStyle = "#8b5a2b"
-    ctx.fillRect(p.x, p.y + 5, p.w, p.h - 5)
+function load(level: number, generation: number) {
+  levelIndex = level
+  generationIndex = generation
+  frame = 0
+  state = createPlayingState(level)
+  renderGenerationButtons()
+  drawChart()
+}
+
+function renderLevelButtons() {
+  levelButtonsEl.replaceChildren()
+  for (const [index] of history.levels.entries()) {
+    const button = document.createElement("button")
+    button.textContent = `Level ${index + 1}`
+    button.className = index === levelIndex ? "active" : ""
+    button.onclick = () => load(index, history.levels[index].bestGeneration)
+    levelButtonsEl.appendChild(button)
   }
-  const c = level.certificate
-  ctx.fillStyle = "#fff8d6"
-  ctx.fillRect(c.x, c.y, c.w, c.h)
-  ctx.fillStyle = "#d33333"
-  ctx.fillRect(c.x + 4, c.y + 4, 10, 4)
-  ctx.fillRect(c.x + 7, c.y + 8, 4, 11)
 }
 
-function marioFrame(state: GameState) {
-  const p = state.player
-  if (!p.grounded) return MarioJump
-  if (p.vx !== 0) return p.animFrame === 0 ? MarioWalk1 : MarioWalk2
-  return MarioIdle
+function renderGenerationButtons() {
+  renderLevelButtons()
+  generationsEl.replaceChildren()
+  const { generations, bestGeneration } = levelHistory()
+  for (const [index, record] of generations.entries()) {
+    const button = document.createElement("button")
+    button.textContent = `${record.generation}${index === bestGeneration ? " ★" : ""}`
+    button.title = `beste fitness ${record.bestFitness.toFixed(1)}, ${record.solved} van de populatie haalde het certificaat`
+    button.className = index === generationIndex ? "active" : ""
+    button.onclick = () => load(levelIndex, index)
+    generationsEl.appendChild(button)
+  }
+}
+
+function drawChart() {
+  const { generations, bestGeneration } = levelHistory()
+  const width = chartCanvas.width
+  const height = chartCanvas.height
+  const bottom = height - 26 // room for the legend underneath the plot
+  const top = 10
+
+  chartCtx.fillStyle = "#141414"
+  chartCtx.fillRect(0, 0, width, height)
+
+  const pointX = (index: number) =>
+    generations.length === 1 ? width / 2 : (index / (generations.length - 1)) * (width - 20) + 10
+
+  // Solved-count bars first, on their own scale: the best-fitness line
+  // saturates the moment one genome reaches the certificate (the solve bonus
+  // dwarfs everything else), so "how much of the population can finish the
+  // level" is what actually shows the population learning.
+  const maxSolved = Math.max(1, ...generations.map((g) => g.solved))
+  const barWidth = Math.max(2, (width - 20) / generations.length - 2)
+  chartCtx.fillStyle = "#2f5d3a"
+  generations.forEach((record, index) => {
+    const barHeight = (record.solved / maxSolved) * (bottom - top)
+    chartCtx.fillRect(pointX(index) - barWidth / 2, bottom - barHeight, barWidth, barHeight)
+  })
+
+  const fitnessValues = generations.flatMap((g) => [g.bestFitness, g.meanFitness])
+  const min = Math.min(...fitnessValues)
+  const span = Math.max(...fitnessValues) - min || 1
+  const pointY = (value: number) => bottom - ((value - min) / span) * (bottom - top)
+
+  const plot = (pick: (record: GenerationRecord) => number, color: string) => {
+    chartCtx.strokeStyle = color
+    chartCtx.lineWidth = 2
+    chartCtx.beginPath()
+    generations.forEach((record, index) => {
+      const x = pointX(index)
+      const y = pointY(pick(record))
+      if (index === 0) chartCtx.moveTo(x, y)
+      else chartCtx.lineTo(x, y)
+    })
+    chartCtx.stroke()
+  }
+
+  plot((record) => record.meanFitness, "#5a7fb8")
+  plot((record) => record.bestFitness, "#ffd84a")
+
+  chartCtx.fillStyle = "#ff5a5a"
+  chartCtx.beginPath()
+  chartCtx.arc(pointX(bestGeneration), pointY(generations[bestGeneration].bestFitness), 4, 0, Math.PI * 2)
+  chartCtx.fill()
+
+  chartCtx.font = "11px monospace"
+  const legend: [string, string][] = [
+    ["#ffd84a", "beste fitness"],
+    ["#5a7fb8", "gemiddelde fitness"],
+    ["#2f5d3a", `opgelost per generatie (max ${maxSolved})`],
+    ["#ff5a5a", "beste generatie"],
+  ]
+  let legendX = 10
+  for (const [color, label] of legend) {
+    chartCtx.fillStyle = color
+    chartCtx.fillRect(legendX, height - 16, 10, 8)
+    chartCtx.fillStyle = "#999"
+    chartCtx.fillText(label, legendX + 14, height - 8)
+    legendX += 24 + chartCtx.measureText(label).width
+  }
 }
 
 function draw() {
-  drawScene(currentLevel)
-  for (const e of state.enemies) {
-    if (!e.alive && e.squashTimer <= 0) continue
-    const frame = e.alive ? Goomba : GoombaSquashed
-    const y = e.alive ? e.y : e.y + (e.h - GoombaSquashed.length)
-    drawSprite(ctx, frame, e.x, y, 1, false)
-  }
-  const p = state.player
-  drawSprite(ctx, marioFrame(state), p.x, p.y, 1, p.facing === -1)
+  drawScene(ctx, LEVELS[levelIndex])
+  drawEntities(ctx, state)
 
-  const run = runs[currentLevel]
-  const label = run
-    ? `LEVEL ${currentLevel + 1} - FRAME ${frameIndex} OF ${run.frames} - ${run.solved ? "SOLVED" : "DID NOT SOLVE"}`
-    : `LEVEL ${currentLevel + 1} - NO RECORDED RUN`
-  drawText(ctx, label, 6, 6, 0.6, "#111111")
-  statusEl.textContent = playing ? "playing" : "finished (restarting)"
+  const record = currentGeneration()
+  const outcome = state.phase === "dialogue" ? "CERTIFICAAT" : state.phase === "dead" ? "GESTRAND" : "BEZIG"
+  drawText(ctx, `LEVEL ${levelIndex + 1} GEN ${record.generation}`, 6, 6, 1, COLORS.ink)
+  drawText(ctx, `FRAME ${frame} ${outcome}`, 6, 26, 1, COLORS.ink)
+
+  statusEl.textContent =
+    `Generatie ${record.generation}: beste fitness ${record.bestFitness.toFixed(1)}, ` +
+    `gemiddelde ${record.meanFitness.toFixed(1)}, ${record.solved} van de populatie haalde het certificaat.`
 }
 
+const FRAME_BUDGET = 900
+const RESTART_DELAY_FRAMES = 90
+let restartCountdown = 0
+
 function tick() {
-  const run = runs[currentLevel]
-  if (run && playing && frameIndex < run.inputs.length && state.phase !== "dead" && state.phase !== "dialogue") {
-    state = step(state, run.inputs[frameIndex])
-    frameIndex++
+  const finished = state.phase === "dead" || state.phase === "dialogue" || frame >= FRAME_BUDGET
+  if (finished) {
+    restartCountdown--
+    if (restartCountdown <= 0) load(levelIndex, generationIndex)
   } else {
-    playing = false
+    // Re-running the stored genome through the same deterministic engine
+    // reproduces that generation's run exactly, so no input traces need
+    // storing -- the weights are the recording.
+    state = step(state, actionFor(currentGeneration().genome, state))
+    frame++
+    restartCountdown = RESTART_DELAY_FRAMES
   }
   draw()
-  if (!playing) {
-    setTimeout(() => loadLevel(currentLevel), 1200)
-  }
   requestAnimationFrame(tick)
 }
 
-loadLevel(0)
+load(0, history.levels[0].bestGeneration)
 tick()

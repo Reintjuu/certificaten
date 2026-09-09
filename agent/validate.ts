@@ -1,177 +1,176 @@
-// Headless regression check: a simple scripted bot plays every level using the
-// pure game engine (no canvas, no DOM) and checks the certificate is reachable
-// without dying, within a frame budget. Run with: npx tsx agent/validate.ts
-import { LEVELS, createPlayingState, step, type GameState, type Input, type Player } from "../src/engine"
-import type { Platform } from "../src/levels"
+// Headless smoke test: a scripted bot drives the pure engine (no canvas) to
+// check each level is still completable after a physics or level-data change.
+// Run with: npm run validate-levels
+//
+// Deliberately simple rules -- it is a fast canary, not a good player. The
+// authoritative "is this level fair" check is the trained agent in
+// agent/train.ts (and the test that replays its best genome).
+import { LEVELS, createPlayingState, step, NO_INPUT, type GameState, type Input, type Player } from "../src/engine"
+import type { Level, Platform } from "../src/levels"
 
 const FRAME_BUDGET = 1800 // 30s at 60fps
 const EDGE_LOOKAHEAD = 28
 const ENEMY_LOOKAHEAD_X = 40
 const ENEMY_LOOKAHEAD_Y = 40
 const MAX_JUMP_FRAMES = 24
-
-// Greedily picks the next stepping-stone platform: the one whose center gets
-// us closest to the certificate horizontally, with a bonus for platforms
-// above us (since every level is a rough staircase up towards the goal).
-// This replaces a purely reactive "jump when the ground runs out" bot, which
-// happily walks forever along a level's continuous ground floor without ever
-// looking up at the platforms it's supposed to climb.
 const MAX_SINGLE_JUMP_RISE = 90 // roughly what one full-held jump can climb
+const APPROACH_DISTANCE = 70
+const STEP_SEARCH_X = 160
 
-function bestScoringPlatform(level: (typeof LEVELS)[number], p: Player, exclude: Platform | undefined): Platform {
+function centerX(rect: { x: number; w: number }) {
+  return rect.x + rect.w / 2
+}
+
+function standingPlatform(level: Level, player: Player): Platform | undefined {
+  return level.platforms.find(
+    (platform) =>
+      player.x + player.w > platform.x &&
+      player.x < platform.x + platform.w &&
+      Math.abs(player.y + player.h - platform.y) < 2
+  )
+}
+
+/** Horizontal gap between the player and a platform's span (0 when over it). */
+function distanceToSpan(player: Player, platform: Platform) {
+  if (platform.x > player.x + player.w) return platform.x - (player.x + player.w)
+  if (player.x > platform.x + platform.w) return player.x - (platform.x + platform.w)
+  return 0
+}
+
+function bestScoringPlatform(level: Level, player: Player, exclude: Platform | undefined): Platform {
   let best = level.platforms[0]
   let bestScore = -Infinity
-  for (const pl of level.platforms) {
-    if (pl === exclude) continue
-    const center = pl.x + pl.w / 2
-    const distToGoalX = Math.abs(level.certificate.x - center)
-    const heightBenefit = p.y - pl.y // positive when pl is higher up than the player
-    const score = -distToGoalX + heightBenefit * 0.6
+  for (const platform of level.platforms) {
+    if (platform === exclude) continue
+    const towardsGoal = -Math.abs(level.certificate.x - centerX(platform))
+    const heightGain = player.y - platform.y
+    const score = towardsGoal + heightGain * 0.6
     if (score > bestScore) {
       bestScore = score
-      best = pl
+      best = platform
     }
   }
   return best
 }
 
-function chooseTarget(level: (typeof LEVELS)[number], p: Player, exclude: Platform | undefined): Platform {
-  const global = bestScoringPlatform(level, p, exclude)
-  if (p.y - global.y <= MAX_SINGLE_JUMP_RISE) return global
-
-  // The goal platform is higher than one jump can reach: aim for the
-  // nearest platform that's both a genuine step up and within jump range,
-  // so the level's staircase gets climbed one step at a time instead of
-  // attempting (and overshooting) one huge leap.
+/** The nearest platform that is a genuine step up and within one jump. */
+function nearestStepUp(level: Level, player: Player, exclude: Platform | undefined): Platform | null {
   let best: Platform | null = null
-  let bestDist = Infinity
-  for (const pl of level.platforms) {
-    if (pl === exclude) continue
-    const center = pl.x + pl.w / 2
-    const rise = p.y - pl.y
+  let bestDistance = Infinity
+  for (const platform of level.platforms) {
+    if (platform === exclude) continue
+    const rise = player.y - platform.y
     if (rise <= 0 || rise > MAX_SINGLE_JUMP_RISE) continue
-    const distX = Math.abs(center - (p.x + p.w / 2))
-    if (distX > 160) continue
-    if (distX < bestDist) {
-      bestDist = distX
-      best = pl
-    }
+    const distance = Math.abs(centerX(platform) - centerX(player))
+    if (distance > STEP_SEARCH_X || distance >= bestDistance) continue
+    bestDistance = distance
+    best = platform
   }
-  return best ?? global
+  return best
 }
 
-// Bot state (how long we've been holding jump, and what we're jumping towards)
-// lives outside the pure engine state, the same way a human's "how long am I
-// holding the button" isn't part of the game world.
+/**
+ * Where to head next. Aims straight for the platform closest to the
+ * certificate, unless that is higher than a single jump can climb -- then it
+ * takes the nearest step up instead, so a staircase gets climbed one step at
+ * a time rather than attempted (and overshot) in one leap.
+ */
+function chooseTarget(level: Level, player: Player, standing: Platform | undefined): Platform {
+  const goal = bestScoringPlatform(level, player, standing)
+  if (player.y - goal.y <= MAX_SINGLE_JUMP_RISE) return goal
+  return nearestStepUp(level, player, standing) ?? goal
+}
+
+function runningOutOfPlatform(standing: Platform, player: Player, dir: number) {
+  if (dir === 0) return false
+  const edge = dir === 1 ? standing.x + standing.w : standing.x
+  const distance = dir === 1 ? edge - (player.x + player.w) : player.x - edge
+  return distance < EDGE_LOOKAHEAD
+}
+
+function enemyAhead(state: GameState, dir: number) {
+  const player = state.player
+  return state.enemies.some(
+    (enemy) =>
+      enemy.alive &&
+      dir !== 0 &&
+      Math.sign(enemy.x - player.x) === dir &&
+      Math.abs(enemy.x - player.x) < ENEMY_LOOKAHEAD_X &&
+      Math.abs(enemy.y - player.y) < ENEMY_LOOKAHEAD_Y
+  )
+}
+
+function shouldJump(state: GameState, standing: Platform | undefined, target: Platform, dir: number) {
+  if (!standing) return true
+  if (runningOutOfPlatform(standing, state.player, dir)) return true
+  if (enemyAhead(state, dir)) return true
+  const climbing = target !== standing && target.y < state.player.y - 10
+  return climbing && distanceToSpan(state.player, target) < APPROACH_DISTANCE
+}
+
+/**
+ * How long the jump button is held is the bot's own business, not game state
+ * -- exactly like a human's thumb. Holding for several frames matters: a
+ * one-frame tap triggers the engine's short-hop cut.
+ */
 export function makeHeuristicBot() {
-  let jumpFramesRemaining = 0
+  let jumpFramesLeft = 0
   let targetY: number | null = null
-  let lockedTarget: Platform | null = null
 
-  return function heuristicAction(state: GameState): Input {
+  return function decide(state: GameState): Input {
     const level = LEVELS[state.levelIndex]
-    const p = state.player
+    const player = state.player
+    const standing = standingPlatform(level, player)
+    const target = chooseTarget(level, player, standing)
 
-    const standing = level.platforms.find(
-      (pl) => p.x + p.w > pl.x && p.x < pl.x + pl.w && Math.abs(p.y + p.h - pl.y) < 2
-    )
-    // While a jump is actively in progress, keep aiming at the platform we
-    // took off for -- recomputing mid-flight lets the rising player "reach"
-    // a further/higher platform than the one it jumped for, so the release
-    // height (and direction) drift to a different target partway through
-    // the same jump.
-    const stepTarget = jumpFramesRemaining > 0 && lockedTarget ? lockedTarget : chooseTarget(level, p, standing)
-    lockedTarget = stepTarget
-    const stepCenter = stepTarget.x + stepTarget.w / 2
-    const dx = stepCenter - (p.x + p.w / 2)
-    const left = dx < -4
-    const right = dx > 4
-    const dir = right ? 1 : left ? -1 : 0
+    const dx = centerX(target) - centerX(player)
+    const dir = dx > 4 ? 1 : dx < -4 ? -1 : 0
 
-    if (p.grounded) {
-      let wantsJump = false
-      if (!standing) {
-        wantsJump = true
-      } else if (dir !== 0) {
-        const edge = dir === 1 ? standing.x + standing.w : standing.x
-        const distToEdge = dir === 1 ? edge - (p.x + p.w) : p.x - edge
-        if (distToEdge < EDGE_LOOKAHEAD) wantsJump = true
-      }
-      // the step target is a platform above us (not just further along the
-      // one we're standing on) and we're close enough underneath/beside it
-      // to jump onto it -- otherwise a bot on a long, unbroken floor never
-      // looks up at the platforms it's meant to climb.
-      if (stepTarget !== standing && stepTarget.y < p.y - 10) {
-        const spanDist =
-          stepTarget.x > p.x + p.w
-            ? stepTarget.x - (p.x + p.w)
-            : p.x > stepTarget.x + stepTarget.w
-              ? p.x - (stepTarget.x + stepTarget.w)
-              : 0
-        if (spanDist < 70) wantsJump = true
-      }
-      for (const e of state.enemies) {
-        if (
-          e.alive &&
-          dir !== 0 &&
-          Math.sign(e.x - p.x) === dir &&
-          Math.abs(e.x - p.x) < ENEMY_LOOKAHEAD_X &&
-          Math.abs(e.y - p.y) < ENEMY_LOOKAHEAD_Y
-        ) {
-          wantsJump = true
-        }
-      }
-      if (wantsJump) {
-        jumpFramesRemaining = MAX_JUMP_FRAMES
-        targetY = stepTarget.y
-      }
+    if (player.grounded && shouldJump(state, standing, target, dir)) {
+      jumpFramesLeft = MAX_JUMP_FRAMES
+      targetY = target.y
     }
 
-    let jumpHeld = jumpFramesRemaining > 0
-    if (jumpHeld && targetY !== null && p.y + p.h <= targetY) {
-      // feet have risen at least as high as the platform we're aiming for; let gravity do the rest
-      jumpHeld = false
-      jumpFramesRemaining = 0
-    }
-    if (jumpFramesRemaining > 0) jumpFramesRemaining--
+    // Once the feet clear the platform being aimed at, stop climbing and let
+    // gravity bring us down onto it.
+    const reachedTargetHeight = targetY !== null && player.y + player.h <= targetY
+    if (reachedTargetHeight) jumpFramesLeft = 0
 
-    return { left, right, jumpHeld, jumpPressed: jumpHeld, confirmPressed: false, resetPressed: false }
+    const jumpHeld = jumpFramesLeft > 0
+    if (jumpFramesLeft > 0) jumpFramesLeft--
+
+    return { ...NO_INPUT, left: dir === -1, right: dir === 1, jumpHeld, jumpPressed: jumpHeld }
   }
 }
 
-function validateLevel(levelIndex: number) {
+type LevelResult = { ok: boolean; frames: number; reason?: string }
+
+export function validateLevel(levelIndex: number): LevelResult {
   let state = createPlayingState(levelIndex)
-  const heuristicAction = makeHeuristicBot()
+  const decide = makeHeuristicBot()
+
   for (let frame = 0; frame < FRAME_BUDGET; frame++) {
-    if (state.phase === "dialogue") {
-      return { ok: true, frames: frame }
-    }
-    if (state.phase === "dead") {
-      return { ok: false, frames: frame, reason: "died" }
-    }
-    state = step(state, heuristicAction(state))
+    if (state.phase === "dialogue") return { ok: true, frames: frame }
+    if (state.phase === "dead") return { ok: false, frames: frame, reason: "died" }
+    state = step(state, decide(state))
   }
   return { ok: false, frames: FRAME_BUDGET, reason: "timeout" }
 }
 
-export function runValidation() {
-  let allOk = true
-  for (let i = 0; i < LEVELS.length; i++) {
-    const result = validateLevel(i)
-    const status = result.ok ? "OK" : `FAIL (${result.reason})`
-    console.log(`Level ${i + 1}/${LEVELS.length}: ${status} - ${result.frames} frames`)
-    if (!result.ok) allOk = false
-  }
-  return allOk
+export function runValidation(log = console.log) {
+  const results = LEVELS.map((_, index) => validateLevel(index))
+  results.forEach((result, index) => {
+    log(`Level ${index + 1}/${LEVELS.length}: ${result.ok ? "OK" : `FAIL (${result.reason})`} - ${result.frames} frames`)
+  })
+  return results.every((result) => result.ok)
 }
 
 const isMain = import.meta.url === `file://${process.argv[1]}`
 if (isMain) {
-  const allOk = runValidation()
-  if (!allOk) {
-    console.error("\nOne or more levels are not completable by the heuristic bot.")
-    process.exit(1)
-  } else {
+  if (runValidation()) {
     console.log("\nAll levels completable.")
+  } else {
+    console.error("\nThe scripted bot could not finish every level (see agent/train.ts for the real check).")
+    process.exit(1)
   }
 }
