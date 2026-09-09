@@ -59,10 +59,14 @@ export const PHYSICS = {
   /** EnemyStomped: a flat $fd, with no dependence on holding the button. */
   bounceVelocity: 0xfd - 0x100,
 
+  /** PlayerAnimTmrData: frames per step of the walk cycle, fastest first. */
+  walkCycleFrames: [0x02, 0x04, 0x07],
+  /** GetPlayerAnimSpeed picks that row at these speeds. */
+  walkCycleThresholds: [0x1c, 0x0e].map((v) => v * SUBPIXEL),
+
   // Ours, not the ROM's: this game has no scrolling camera or score, so these
   // have no original to be faithful to.
   squashDuration: 20,
-  walkFrameDistance: 14,
   deathFallMargin: 60,
   playerW: PLAYER_SIZE.w,
   playerH: PLAYER_SIZE.h,
@@ -168,9 +172,34 @@ export function createEnemies(definitions: EnemyDef[]): Enemy[] {
 }
 
 /**
- * Ports SMB1's ImposeFriction/GetXPhy: one adder both accelerates and brakes,
- * chosen from whether you're running, and doubled when you push against the
- * way you're already moving (the skid).
+ * On the ground SMB1 asks whether you're holding B while pushing the way you
+ * already move; in the air X_Physics ignores the button and only looks at how
+ * fast you're already going.
+ */
+function isRunning(p: Player, input: Input, pushingAlong: boolean) {
+  if (!p.grounded) return Math.abs(p.vx) >= PHYSICS.airRunningSpeedThreshold
+  return pushingAlong && (input.run || p.runningTimer > 0)
+}
+
+/** FrictionData, doubled when pushing against the way you move: the skid. */
+function frictionAdder(p: Player, dir: Direction, movingDir: Direction, running: boolean) {
+  const base = running
+    ? PHYSICS.accelRunning
+    : Math.abs(p.vx) >= PHYSICS.fastSpeedThreshold
+      ? PHYSICS.accelFastNotRunning
+      : PHYSICS.accelWalking
+  const turningAround = dir !== 0 && movingDir !== 0 && dir !== movingDir
+  return turningAround ? base * PHYSICS.skidMultiplier : base
+}
+
+function updateRunningTimer(p: Player, input: Input, pushingAlong: boolean) {
+  if (input.run && p.grounded && pushingAlong) p.runningTimer = PHYSICS.runningTimerFrames
+  else if (p.runningTimer > 0) p.runningTimer--
+}
+
+/**
+ * Ports ImposeFriction: a single adder both accelerates and brakes, so
+ * letting go slows you at the same rate that holding a direction sped you up.
  */
 export function applyHorizontalInput(p: Player, input: Input): Direction {
   const dir: Direction = input.right && !input.left ? 1 : input.left && !input.right ? -1 : 0
@@ -179,23 +208,10 @@ export function applyHorizontalInput(p: Player, input: Input): Direction {
   const movingDir: Direction = p.vx !== 0 ? (Math.sign(p.vx) as Direction) : p.facing
   const pushingAlong = dir !== 0 && dir === movingDir
 
-  if (input.run && p.grounded && pushingAlong) {
-    p.runningTimer = PHYSICS.runningTimerFrames
-  } else if (p.runningTimer > 0) {
-    p.runningTimer--
-  }
-
-  const running = p.grounded
-    ? pushingAlong && (input.run || p.runningTimer > 0)
-    : Math.abs(p.vx) >= PHYSICS.airRunningSpeedThreshold
+  updateRunningTimer(p, input, pushingAlong)
+  const running = isRunning(p, input, pushingAlong)
   const maxSpeed = running ? PHYSICS.maxRunSpeed : PHYSICS.maxWalkSpeed
-
-  let adder = running
-    ? PHYSICS.accelRunning
-    : Math.abs(p.vx) >= PHYSICS.fastSpeedThreshold
-      ? PHYSICS.accelFastNotRunning
-      : PHYSICS.accelWalking
-  if (dir !== 0 && movingDir !== 0 && dir !== movingDir) adder *= PHYSICS.skidMultiplier
+  const adder = frictionAdder(p, dir, movingDir, running)
 
   if (dir !== 0) {
     p.vx = clamp(p.vx + dir * adder, -maxSpeed, maxSpeed)
@@ -204,14 +220,12 @@ export function applyHorizontalInput(p: Player, input: Input): Direction {
   }
 
   if (p.vx !== 0) {
-    const sign = Math.sign(p.vx)
-    const braked = p.vx - sign * adder
-    p.vx = Math.sign(braked) === sign ? clamp(braked, -maxSpeed, maxSpeed) : 0
+    const braked = p.vx - movingDir * adder
+    p.vx = Math.sign(braked) === movingDir ? clamp(braked, -maxSpeed, maxSpeed) : 0
   }
   return 0
 }
 
-/** Which row of the jump tables a take-off at this speed uses. */
 export function jumpIndexFor(speed: number): number {
   let index = 0
   while (index < PHYSICS.jumpSpeedThresholds.length && speed >= PHYSICS.jumpSpeedThresholds[index]) {
@@ -258,7 +272,11 @@ export function resolvePlatformCollisions(p: Player, level: Level) {
   }
 }
 
-/** Advances the walk cycle; faster movement flips frames sooner. */
+export function walkCycleFramesFor(speed: number): number {
+  const row = PHYSICS.walkCycleThresholds.findIndex((threshold) => speed >= threshold)
+  return PHYSICS.walkCycleFrames[row === -1 ? PHYSICS.walkCycleFrames.length - 1 : row]
+}
+
 export function updateAnimation(p: Player, dir: Direction) {
   if (!p.grounded) return
   if (dir === 0) {
@@ -266,8 +284,8 @@ export function updateAnimation(p: Player, dir: Direction) {
     p.animFrame = 0
     return
   }
-  p.animTimer += Math.abs(p.vx)
-  if (p.animTimer > PHYSICS.walkFrameDistance) {
+  p.animTimer++
+  if (p.animTimer >= walkCycleFramesFor(Math.abs(p.vx))) {
     p.animTimer = 0
     p.animFrame = p.animFrame === 0 ? 1 : 0
   }

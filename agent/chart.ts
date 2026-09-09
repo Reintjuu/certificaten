@@ -1,5 +1,6 @@
 // Draws the learning curve of one training run. Kept apart from replay.ts so
 // that file is only about replaying runs, not about plotting them.
+import { COLORS as GAME_COLORS } from "../src/render"
 import type { GenerationRecord } from "./train"
 
 const LEGEND_HEIGHT = 26
@@ -8,7 +9,7 @@ const SIDE_MARGIN = 10
 
 const COLORS = {
   background: "#141414",
-  best: "#ffd84a",
+  best: GAME_COLORS.highlight,
   mean: "#5a7fb8",
   solved: "#2f5d3a",
   marker: "#ff5a5a",

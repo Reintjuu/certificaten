@@ -7,7 +7,17 @@
 // this honest when the physics change, which is exactly when a canary has to
 // stay trustworthy -- the previous hand-tuned version silently became useless
 // the moment the numbers moved.
-import { LEVELS, NO_INPUT, createPlayingState, step, type GameState, type Input } from "../src/engine"
+import {
+  LEVELS,
+  NO_INPUT,
+  createPlayingState,
+  hasDied,
+  hasFinishedLevel,
+  isPlaying,
+  step,
+  type GameState,
+  type Input,
+} from "../src/engine"
 import type { Level } from "../src/levels"
 
 const FRAME_BUDGET = 1800 // 30s at 60fps
@@ -33,7 +43,7 @@ function simulateMove(from: GameState, dir: 1 | -1, holdFrames: number): Move {
     const next = inputFor(dir, jumping, holdFrames > 0 && frame === 0)
     inputs.push(next)
     state = step(state, next)
-    if (state.phase !== "playing") break
+    if (!isPlaying(state)) break
     // A hop ends when we touch down again; a walk runs its full length.
     if (holdFrames > 0 && frame > 2 && state.player.grounded) break
   }
@@ -42,8 +52,8 @@ function simulateMove(from: GameState, dir: 1 | -1, holdFrames: number): Move {
 
 /** Lower is better; reaching the certificate wins outright. */
 function score(state: GameState, level: Level) {
-  if (state.phase === "dialogue") return -Infinity
-  if (state.phase === "dead") return Infinity
+  if (hasFinishedLevel(state)) return -Infinity
+  if (hasDied(state)) return Infinity
   const player = state.player
   return Math.abs(level.certificate.x - player.x) + Math.max(0, player.y - level.certificate.y)
 }
@@ -74,8 +84,8 @@ function validateLevel(levelIndex: number): LevelResult {
   let queued: Input[] = []
 
   while (frames < FRAME_BUDGET) {
-    if (state.phase === "dialogue") return { ok: true, frames }
-    if (state.phase === "dead") return { ok: false, frames, reason: "died" }
+    if (hasFinishedLevel(state)) return { ok: true, frames }
+    if (hasDied(state)) return { ok: false, frames, reason: "died" }
 
     if (queued.length === 0) {
       const move = bestMove(state, level)

@@ -49,7 +49,7 @@ const three = {
 export const LEVELS: Level[] = [
   {
     platforms: Object.values(one),
-    enemies: [enemyOn(one.guarded, { from: 10, to: 66, speed: 0.7 })],
+    enemies: [enemyOn(one.guarded, { fromOffset: 10, toOffset: 66, speed: 0.7 })],
     certificate: certificateOn(one.prize, 35),
     playerStart: startOn(one.ground, 25),
     intro: [
@@ -62,8 +62,8 @@ export const LEVELS: Level[] = [
   {
     platforms: Object.values(two),
     enemies: [
-      enemyOn(two.groundBeforeGap, { from: 60, to: 115, speed: 0.8 }),
-      enemyOn(two.guarded, { from: 30, to: 54, speed: 0.9 }),
+      enemyOn(two.groundBeforeGap, { fromOffset: 60, toOffset: 115, speed: 0.8 }),
+      enemyOn(two.guarded, { fromOffset: 30, toOffset: 54, speed: 0.9 }),
     ],
     certificate: certificateOn(two.prize, 30),
     playerStart: startOn(two.groundBeforeGap, 20),
@@ -76,7 +76,7 @@ export const LEVELS: Level[] = [
   },
   {
     platforms: Object.values(three),
-    enemies: [enemyOn(three.guarded, { from: 20, to: 44, speed: 0.8 })],
+    enemies: [enemyOn(three.guarded, { fromOffset: 20, toOffset: 44, speed: 0.8 })],
     certificate: certificateOn(three.prize, 30),
     playerStart: startOn(three.ground, 20),
     intro: [

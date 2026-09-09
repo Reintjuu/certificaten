@@ -6,7 +6,7 @@
 // agent/replay.html can replay any generation and show the whole learning
 // curve -- the weights are the recording, since the engine is deterministic.
 import { writeFileSync } from "node:fs"
-import { LEVELS, createPlayingState, step } from "../src/engine"
+import { LEVELS, createPlayingState, hasDied, hasFinishedLevel, step } from "../src/engine"
 import { RUN_FRAME_BUDGET, actionFor, randomGenome, type Genome } from "./policy"
 
 const POPULATION_SIZE = 60
@@ -48,11 +48,11 @@ export function evaluate(genome: Genome, levelIndex: number): { fitness: number;
   let frame = 0
 
   for (; frame < RUN_FRAME_BUDGET; frame++) {
-    if (state.phase === "dialogue") {
+    if (hasFinishedLevel(state)) {
       solved = true
       break
     }
-    if (state.phase === "dead") break
+    if (hasDied(state)) break
 
     const player = state.player
     closest = Math.min(closest, Math.hypot(certificate.x - player.x, certificate.y - player.y))

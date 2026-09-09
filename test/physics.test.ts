@@ -14,6 +14,7 @@ import {
   resolveEnemyCollisions,
   resolvePlatformCollisions,
   updateAnimation,
+  walkCycleFramesFor,
   type Enemy,
   type Input,
   type Player,
@@ -229,11 +230,20 @@ describe("resolvePlatformCollisions", () => {
 })
 
 describe("updateAnimation", () => {
-  test("flips the walk frame once enough ground is covered", () => {
-    const p = player({ grounded: true, vx: PHYSICS.maxRunSpeed, animTimer: PHYSICS.walkFrameDistance })
+  test("flips the walk frame once its step has lasted long enough", () => {
+    const p = player({ grounded: true, vx: PHYSICS.maxRunSpeed, animTimer: PHYSICS.walkCycleFrames[0] - 1 })
     updateAnimation(p, 1)
     assert.equal(p.animFrame, 1)
     assert.equal(p.animTimer, 0)
+  })
+
+  test("running cycles the legs faster than walking, in the ROM's three steps", () => {
+    const running = walkCycleFramesFor(PHYSICS.maxRunSpeed)
+    const walking = walkCycleFramesFor(PHYSICS.maxWalkSpeed)
+    const crawling = walkCycleFramesFor(0.1)
+    assert.ok(running < walking, `running (${running}) should step faster than walking (${walking})`)
+    assert.ok(walking < crawling, `walking (${walking}) should step faster than crawling (${crawling})`)
+    assert.deepEqual([running, walking, crawling], [...PHYSICS.walkCycleFrames])
   })
 
   test("standing still resets to the idle frame", () => {

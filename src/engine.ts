@@ -33,6 +33,18 @@ export function assertNever(value: never): never {
   throw new Error(`Unhandled case: ${String(value)}`)
 }
 
+export function hasFinishedLevel(state: GameState) {
+  return state.phase === "dialogue" && state.dialogueKind === "outro"
+}
+
+export function hasDied(state: GameState) {
+  return state.phase === "dead"
+}
+
+export function isPlaying(state: GameState) {
+  return state.phase === "playing"
+}
+
 export function createPlayingState(levelIndex: number, levels: Level[] = LEVELS): GameState {
   const level = levels[levelIndex]
   return {

@@ -6,7 +6,15 @@
 // Two modes: one generation at a time, or every generation at once as
 // coloured "ghosts" with the path each one took.
 import trainingHistory from "./training-history.json"
-import { LEVELS, createPlayingState, step, type GameState } from "../src/engine"
+import {
+  LEVELS,
+  createPlayingState,
+  hasDied,
+  hasFinishedLevel,
+  isPlaying,
+  step,
+  type GameState,
+} from "../src/engine"
 import { COLORS, drawScene, drawEntities } from "../src/render"
 import { drawText } from "../src/font"
 import { drawFitnessChart } from "./chart"
@@ -122,8 +130,8 @@ function renderControls() {
 }
 
 function outcomeOf(ghost: Ghost) {
-  if (ghost.state.phase === "dialogue") return "CERTIFICAAT"
-  return ghost.state.phase === "dead" ? "GESTRAND" : "BEZIG"
+  if (hasFinishedLevel(ghost.state)) return "CERTIFICAAT"
+  return hasDied(ghost.state) ? "GESTRAND" : "BEZIG"
 }
 
 function drawGhostPath(ghost: Ghost, color: string, width: number, alpha: number) {
@@ -162,7 +170,7 @@ function drawAllGenerations() {
   const best = ghosts[bestIndex] ?? ghosts[0]
   drawEntities(ctx, best.state)
 
-  const reached = ghosts.filter((ghost) => ghost.state.phase === "dialogue").length
+  const reached = ghosts.filter((ghost) => hasFinishedLevel(ghost.state)).length
   const alive = ghosts.filter((ghost) => !ghost.finished).length
   drawText(ctx, `ALLE ${total} GENERATIES`, 6, 6, 1, COLORS.ink)
   drawText(ctx, `FRAME ${frame} ${reached} BINNEN`, 6, 26, 1, COLORS.ink)
@@ -189,7 +197,7 @@ function draw() {
 
 function advance(ghost: Ghost) {
   if (ghost.finished) return
-  if (ghost.state.phase !== "playing" || frame >= RUN_FRAME_BUDGET) {
+  if (!isPlaying(ghost.state) || frame >= RUN_FRAME_BUDGET) {
     ghost.finished = true
     return
   }
