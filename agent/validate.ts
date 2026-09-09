@@ -50,26 +50,41 @@ function simulateMove(from: GameState, dir: 1 | -1, holdFrames: number): Move {
   return { inputs, state }
 }
 
-/** Lower is better; reaching the certificate wins outright. */
-function score(state: GameState, level: Level) {
-  if (hasFinishedLevel(state)) return -Infinity
-  if (hasDied(state)) return Infinity
-  const player = state.player
-  return Math.abs(level.certificate.x - player.x) + Math.max(0, player.y - level.certificate.y)
+const DEATH_PENALTY = 100000
+
+/**
+ * Lower is better. Dying is heavily penalised but still ranked, so that when
+ * every option looks fatal the bot picks the least bad one and keeps playing
+ * rather than reporting itself stuck.
+ */
+function score(move: Move, level: Level) {
+  const player = move.state.player
+  const distance =
+    Math.abs(level.certificate.x - player.x) + Math.max(0, player.y - level.certificate.y)
+  if (hasFinishedLevel(move.state)) return -Infinity
+  return hasDied(move.state) ? DEATH_PENALTY + distance : distance
 }
 
-function bestMove(state: GameState, level: Level): Move | null {
-  let best: Move | null = null
-  let bestScore = Infinity
+/**
+ * Looks two moves ahead. One is not enough: at a gap every jump from a
+ * standstill scores worse than staying put, and backing up for a run-up
+ * scores worse still, so a greedy bot parks itself at the edge forever.
+ */
+function bestMove(state: GameState, level: Level, depth = 2): { move: Move; score: number } | null {
+  let best: { move: Move; score: number } | null = null
 
   for (const dir of [1, -1] as const) {
     for (const hold of HOLD_OPTIONS) {
       const move = simulateMove(state, dir, hold)
-      const moveScore = score(move.state, level)
-      if (moveScore < bestScore) {
-        bestScore = moveScore
-        best = move
+      let moveScore = score(move, level)
+
+      const worthExploring = depth > 1 && moveScore !== -Infinity && moveScore < DEATH_PENALTY
+      if (worthExploring) {
+        const followUp = bestMove(move.state, level, depth - 1)
+        if (followUp) moveScore = Math.min(moveScore, followUp.score)
       }
+
+      if (!best || moveScore < best.score) best = { move, score: moveScore }
     }
   }
   return best
@@ -88,9 +103,9 @@ function validateLevel(levelIndex: number): LevelResult {
     if (hasDied(state)) return { ok: false, frames, reason: "died" }
 
     if (queued.length === 0) {
-      const move = bestMove(state, level)
-      if (!move || move.inputs.length === 0) return { ok: false, frames, reason: "stuck" }
-      queued = move.inputs
+      const plan = bestMove(state, level)
+      if (!plan || plan.move.inputs.length === 0) return { ok: false, frames, reason: "stuck" }
+      queued = plan.move.inputs
     }
 
     const next = queued.shift()

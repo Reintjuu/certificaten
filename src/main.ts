@@ -1,5 +1,5 @@
 import { BLINK_PERIOD_FRAMES, CANVAS_W, CANVAS_H, LEVELS, assertNever, createInitialState, step, type GameState, type Input } from "./engine"
-import { COLORS, drawScene, drawEntities } from "./render"
+import { COLORS, drawScene, drawEntities, withCamera } from "./render"
 import { drawText, drawTextCentered, wrapText } from "./font"
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game")!
@@ -61,6 +61,8 @@ let state: GameState = createInitialState()
 
 function drawHud(state: GameState) {
   drawText(ctx, `LEVEL ${state.levelIndex + 1}-${LEVELS.length}`, 8, 6, 1, COLORS.ink)
+  const time = String(Math.max(0, state.timeRemaining)).padStart(3, "0")
+  drawText(ctx, `TIJD ${time}`, CANVAS_W - 8 * 16, 6, 1, COLORS.ink)
 }
 
 function drawDialogueBox(state: GameState) {
@@ -116,23 +118,28 @@ function drawDeadOverlay() {
   drawTextCentered(ctx, "DRUK OP R: OPNIEUW", CANVAS_W / 2, 150, 1, "#ffffff")
 }
 
+function drawWorld(state: GameState) {
+  withCamera(ctx, state.cameraX, () => {
+    drawScene(ctx, LEVELS[state.levelIndex])
+    drawEntities(ctx, state)
+  })
+}
+
 function draw(state: GameState) {
   switch (state.phase) {
     case "title":
       drawTitleScreen(state)
       return
     case "dialogue":
-      drawScene(ctx, LEVELS[state.levelIndex])
+      withCamera(ctx, state.cameraX, () => drawScene(ctx, LEVELS[state.levelIndex]))
       drawDialogueBox(state)
       return
     case "playing":
-      drawScene(ctx, LEVELS[state.levelIndex])
-      drawEntities(ctx, state)
+      drawWorld(state)
       drawHud(state)
       return
     case "dead":
-      drawScene(ctx, LEVELS[state.levelIndex])
-      drawEntities(ctx, state)
+      drawWorld(state)
       drawHud(state)
       drawDeadOverlay()
       return

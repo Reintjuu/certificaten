@@ -6,8 +6,9 @@ import { CANVAS_W, CANVAS_H, PHYSICS, type GameState, type Input, type Level } f
 
 /** How long a single attempt at a level may last, in frames (15s at 60fps).
  * The trainer records runs against this and the viewer replays them against
- * it, so it has to be one number, not two. */
-export const RUN_FRAME_BUDGET = 900
+ * it, so it has to be one number, not two. Crossing a 1440px level at
+ * running speed already takes about 600 frames. */
+export const RUN_FRAME_BUDGET = 1800
 
 /** How far an output must swing before it counts as pressing a direction. */
 const MOVE_THRESHOLD = 0.2

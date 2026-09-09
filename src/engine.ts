@@ -3,7 +3,7 @@
 // this file decides when they apply.
 import { LEVELS } from "./levels"
 import type { Level } from "./levels"
-import { createEnemies, createPlayer, overlaps, stepWorld } from "./physics"
+import { CANVAS_W, PHYSICS, clamp, createEnemies, createPlayer, overlaps, stepWorld } from "./physics"
 import type { Enemy, Input, Player } from "./physics"
 
 export { LEVELS }
@@ -26,6 +26,13 @@ export type GameState = {
   dialogueIndex: number
   dialogueKind: DialogueKind
   blinkTimer: number
+  /** Left edge of the view. SMB1 never scrolls back, so this only grows. */
+  cameraX: number
+  /** Counts down to the next framerule, SMB1's 21-frame interval tick. */
+  frameruleTimer: number
+  /** Counts down to the next unit of level time. */
+  gameTimerTicks: number
+  timeRemaining: number
 }
 
 /** Compile-time exhaustiveness guard: adding a GamePhase becomes an error. */
@@ -56,6 +63,10 @@ export function createPlayingState(levelIndex: number, levels: Level[] = LEVELS)
     dialogueIndex: 0,
     dialogueKind: "intro",
     blinkTimer: 0,
+    cameraX: 0,
+    frameruleTimer: PHYSICS.frameruleFrames,
+    gameTimerTicks: PHYSICS.gameTimerFrames,
+    timeRemaining: level.timeLimit,
   }
 }
 
@@ -67,6 +78,30 @@ function resetLevel(state: GameState, levels: Level[]) {
   const level = levels[state.levelIndex]
   state.player = createPlayer(level.playerStart)
   state.enemies = createEnemies(level.enemies)
+  state.cameraX = 0
+  state.timeRemaining = level.timeLimit
+  state.gameTimerTicks = PHYSICS.gameTimerFrames
+}
+
+/** The view follows the player past the middle of the screen, and never back. */
+function updateCamera(state: GameState, level: Level) {
+  const centred = state.player.x + state.player.w / 2 - CANVAS_W / 2
+  state.cameraX = clamp(Math.max(state.cameraX, centred), 0, level.width - CANVAS_W)
+}
+
+/** Returns true on the frames where SMB1's interval timers tick. */
+function advanceFramerule(state: GameState) {
+  state.frameruleTimer--
+  if (state.frameruleTimer > 0) return false
+  state.frameruleTimer = PHYSICS.frameruleFrames
+  return true
+}
+
+function advanceGameTimer(state: GameState) {
+  state.gameTimerTicks--
+  if (state.gameTimerTicks > 0) return
+  state.gameTimerTicks = PHYSICS.gameTimerFrames
+  state.timeRemaining--
 }
 
 function startDialogue(state: GameState, kind: DialogueKind, levels: Level[]) {
@@ -79,9 +114,16 @@ function startDialogue(state: GameState, kind: DialogueKind, levels: Level[]) {
 
 function stepPlaying(state: GameState, input: Input, levels: Level[]) {
   const level = levels[state.levelIndex]
-  const { died } = stepWorld(state.player, state.enemies, level, input)
+  const framerule = advanceFramerule(state)
+  advanceGameTimer(state)
 
-  if (died) {
+  const { died } = stepWorld(state.player, state.enemies, level, input, {
+    cameraX: state.cameraX,
+    framerule,
+  })
+  updateCamera(state, level)
+
+  if (died || state.timeRemaining <= 0) {
     state.phase = "dead"
     return
   }

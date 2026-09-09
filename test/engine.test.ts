@@ -19,6 +19,8 @@ const RESTING_Y = GROUND_Y - PHYSICS.playerH
 
 function makeLevel(overrides: Partial<Level> = {}): Level {
   return {
+    width: 480,
+    timeLimit: 400,
     platforms: [{ x: 0, y: GROUND_Y, w: 480, h: 20 }],
     enemies: [],
     certificate: { x: 460, y: 20, w: 18, h: 24 },
@@ -168,7 +170,7 @@ describe("platforms", () => {
 describe("enemies", () => {
   const enemyLevel = (enemyX: number) =>
     makeLevel({
-      enemies: [{ x: enemyX, y: GROUND_Y - PHYSICS.enemyH, vx: 0, patrolMin: enemyX, patrolMax: enemyX }],
+      enemies: [{ x: enemyX, y: GROUND_Y - PHYSICS.enemyH, facing: -1 }],
     })
 
   test("dropping onto an enemy squashes it and bounces the player", () => {
@@ -186,7 +188,7 @@ describe("enemies", () => {
 
     assert.equal(state.phase, "playing", "a clean stomp must not kill the player")
     assert.equal(state.enemies[0].alive, false)
-    assert.equal(state.enemies[0].squashTimer, PHYSICS.squashDuration)
+    assert.equal(state.enemies[0].squashTimer, PHYSICS.squashFramerules)
     assert.ok(bounced, "stomping should bounce the player back up")
   })
 
@@ -223,11 +225,19 @@ describe("enemies", () => {
     assert.equal(state.enemies[0].alive, false)
   })
 
-  test("patrolling enemies turn around at their bounds", () => {
-    const levels = [makeLevel({ enemies: [{ x: 105, y: 100, vx: 1, patrolMin: 100, patrolMax: 110 }] })]
-    const state = run(createPlayingState(0, levels), levels, 12, NO_INPUT)
-    assert.ok(state.enemies[0].vx < 0, "enemy should have reversed at the right bound")
-    assert.ok(state.enemies[0].x <= 111)
+  test("an enemy walks off its ledge and falls out of the world", () => {
+    // The player keeps its own ground so it stays alive and the world keeps
+    // stepping; the enemy's ledge is separate and ends in mid-air.
+    const ledge = { x: 200, y: 150, w: 40, h: 12 }
+    const levels = [
+      makeLevel({
+        platforms: [{ x: 0, y: GROUND_Y, w: 100, h: 20 }, ledge],
+        enemies: [{ x: 205, y: 150 - PHYSICS.enemyH, facing: 1 }],
+      }),
+    ]
+    const state = run(createPlayingState(0, levels), levels, 300, NO_INPUT)
+    assert.equal(state.phase, "playing", "the player should still be standing on its own ground")
+    assert.equal(state.enemies[0].alive, false, "the enemy should have walked off and dropped away")
   })
 })
 
@@ -304,7 +314,7 @@ describe("progression", () => {
 
 describe("purity", () => {
   test("step never mutates the state it is given", () => {
-    const levels = [makeLevel({ enemies: [{ x: 105, y: 100, vx: 1, patrolMin: 100, patrolMax: 110 }] })]
+    const levels = [makeLevel({ enemies: [{ x: 105, y: 100, facing: 1 }] })]
     const state = settleOnGround(levels)
     const before = JSON.stringify(state)
 

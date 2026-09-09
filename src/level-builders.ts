@@ -16,14 +16,12 @@ export function platform(x: number, y: number, w: number, h = DEFAULT_PLATFORM_T
 
 export function enemyOn(
   platform: Platform,
-  patrol: { fromOffset: number; toOffset: number; speed: number }
+  placement: { offsetFromLeftEdge: number; facing: 1 | -1 }
 ): EnemyDef {
   return {
-    x: platform.x + patrol.fromOffset,
+    x: platform.x + placement.offsetFromLeftEdge,
     y: platform.y - ENEMY_SIZE.h,
-    vx: patrol.speed,
-    patrolMin: platform.x + patrol.fromOffset,
-    patrolMax: platform.x + patrol.toOffset,
+    facing: placement.facing,
   }
 }
 

@@ -1,4 +1,4 @@
-import { CANVAS_W, CANVAS_H, type GameState, type Level, type Player } from "./engine"
+import { CANVAS_H, type GameState, type Level, type Player } from "./engine"
 import {
   drawSprite,
   MarioIdle,
@@ -24,14 +24,24 @@ export const COLORS = {
   highlight: "#ffd84a",
 } as const
 
+/** Everything in the world is drawn in level coordinates, shifted by the camera. */
+export function withCamera(ctx: CanvasRenderingContext2D, cameraX: number, draw: () => void) {
+  ctx.save()
+  ctx.translate(-Math.round(cameraX), 0)
+  draw()
+  ctx.restore()
+}
+
 export function drawScene(ctx: CanvasRenderingContext2D, level: Level) {
   ctx.fillStyle = COLORS.sky
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
+  ctx.fillRect(0, 0, level.width, CANVAS_H)
 
   ctx.fillStyle = COLORS.cloud
-  ctx.fillRect(35, 35, 42, 8)
-  ctx.fillRect(50, 27, 25, 8)
-  ctx.fillRect(330, 55, 48, 8)
+  for (let x = 35; x < level.width; x += 300) {
+    ctx.fillRect(x, 35, 42, 8)
+    ctx.fillRect(x + 15, 27, 25, 8)
+    ctx.fillRect(x + 190, 55, 48, 8)
+  }
 
   for (const platform of level.platforms) {
     ctx.fillStyle = COLORS.groundTop

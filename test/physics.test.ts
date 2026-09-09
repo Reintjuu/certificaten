@@ -40,9 +40,9 @@ function enemy(overrides: Partial<Enemy> = {}): Enemy {
     w: PHYSICS.enemyW,
     h: PHYSICS.enemyH,
     vx: 1,
-    patrolMin: 90,
-    patrolMax: 110,
+    vy: 0,
     alive: true,
+    awake: true,
     squashTimer: 0,
     ...overrides,
   }
@@ -50,6 +50,8 @@ function enemy(overrides: Partial<Enemy> = {}): Enemy {
 
 function levelWithPlatform(x: number, y: number, w: number): Level {
   return {
+    width: 480,
+    timeLimit: 400,
     platforms: [{ x, y, w, h: 12 }],
     enemies: [],
     certificate: { x: 0, y: 0, w: 1, h: 1 },
@@ -262,22 +264,45 @@ describe("updateAnimation", () => {
 })
 
 describe("moveEnemies", () => {
-  test("turns around at the patrol bounds", () => {
-    const walker = enemy({ x: 110, vx: 1 })
-    moveEnemies([walker])
-    assert.ok(walker.vx < 0)
+  const level = levelWithPlatform(0, 200, 200)
+
+  test("walks off the end of its platform instead of turning around", () => {
+    // SMB1's normal enemies only turn at something solid, never at a ledge.
+    const walker = enemy({ x: 190, y: 200 - PHYSICS.enemyH, vx: PHYSICS.enemyWalkSpeed })
+    for (let frame = 0; frame < 90; frame++) moveEnemies([walker], level, 0, false)
+    assert.ok(walker.x > 200, "should have walked past the edge")
+    assert.ok(walker.vx > 0, "and not turned around")
   })
 
-  test("a squashed enemy stops moving and counts down", () => {
+  test("falls onto a platform below and stops there", () => {
+    const falling = enemy({ x: 50, y: 40, vx: 0 })
+    for (let frame = 0; frame < 120; frame++) moveEnemies([falling], level, 0, false)
+    assert.equal(falling.y, 200 - PHYSICS.enemyH)
+    assert.equal(falling.vy, 0)
+  })
+
+  test("stays dormant until the camera reaches it", () => {
+    const offscreen = enemy({ x: 900, y: 200 - PHYSICS.enemyH })
+    offscreen.awake = false
+    moveEnemies([offscreen], { ...level, width: 1440 }, 0, false)
+    assert.equal(offscreen.awake, false)
+    assert.equal(offscreen.x, 900)
+
+    moveEnemies([offscreen], { ...level, width: 1440 }, 600, false)
+    assert.equal(offscreen.awake, true)
+  })
+
+  test("a squashed enemy counts down once per framerule, not per frame", () => {
     const squashed = enemy({ alive: false, squashTimer: 3, x: 100 })
-    moveEnemies([squashed])
-    assert.equal(squashed.x, 100)
+    moveEnemies([squashed], level, 0, false)
+    assert.equal(squashed.squashTimer, 3, "an ordinary frame leaves it alone")
+    moveEnemies([squashed], level, 0, true)
     assert.equal(squashed.squashTimer, 2)
   })
 
   test("the countdown never goes negative", () => {
     const gone = enemy({ alive: false, squashTimer: 0 })
-    moveEnemies([gone])
+    moveEnemies([gone], level, 0, true)
     assert.equal(gone.squashTimer, 0)
   })
 })
@@ -290,7 +315,7 @@ describe("resolveEnemyCollisions", () => {
 
     assert.equal(died, false)
     assert.equal(target.alive, false)
-    assert.equal(target.squashTimer, PHYSICS.squashDuration)
+    assert.equal(target.squashTimer, PHYSICS.squashFramerules)
     assert.equal(p.vy, PHYSICS.bounceVelocity)
   })
 

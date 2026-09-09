@@ -64,9 +64,19 @@ export const PHYSICS = {
   /** GetPlayerAnimSpeed picks that row at these speeds. */
   walkCycleThresholds: [0x1c, 0x0e].map((v) => v * SUBPIXEL),
 
-  // Ours, not the ROM's: this game has no scrolling camera or score, so these
-  // have no original to be faithful to.
-  squashDuration: 20,
+  /** MoveNormalEnemy: normal enemies walk at $f8 and never turn at a ledge. */
+  enemyWalkSpeed: 0x08 * SUBPIXEL,
+  /** MoveD_EnemyVertically / SetHiMax: enemy gravity and its fall cap. */
+  enemyGravity: 0x3d * SUBFORCE,
+  enemyMaxFallSpeed: 0x03,
+  /** IntervalTimerControl reloads with $14, so the cycle is 21 frames. */
+  frameruleFrames: 0x14 + 1,
+  /** GameTimerCtrlTimer reloads with $18: one unit of level time per 24 frames. */
+  gameTimerFrames: 0x18,
+  /** EnemyIntervalTimer counts framerules, not frames. */
+  squashFramerules: 1,
+
+  // Ours, not the ROM's.
   deathFallMargin: 60,
   playerW: PLAYER_SIZE.w,
   playerH: PLAYER_SIZE.h,
@@ -101,9 +111,11 @@ export type Enemy = {
   w: number
   h: number
   vx: number
-  patrolMin: number
-  patrolMax: number
+  vy: number
   alive: boolean
+  /** Enemies stay dormant until the camera brings them into view. */
+  awake: boolean
+  /** Counted in framerules, like SMB1's EnemyIntervalTimer. */
   squashTimer: number
 }
 
@@ -163,12 +175,26 @@ export function createEnemies(definitions: EnemyDef[]): Enemy[] {
     y: definition.y,
     w: PHYSICS.enemyW,
     h: PHYSICS.enemyH,
-    vx: definition.vx,
-    patrolMin: definition.patrolMin,
-    patrolMax: definition.patrolMax,
+    vx: definition.facing * PHYSICS.enemyWalkSpeed,
+    vy: 0,
     alive: true,
+    awake: false,
     squashTimer: 0,
   }))
+}
+
+/** Drops a box onto any platform surface it crossed this frame. */
+function landOnPlatform(box: { x: number; y: number; w: number; h: number; vy: number }, level: Level) {
+  for (const platform of level.platforms) {
+    const horizontallyOver = box.x + box.w > platform.x && box.x < platform.x + platform.w
+    const crossedSurface = box.y + box.h >= platform.y && box.y + box.h - box.vy <= platform.y
+    if (box.vy >= 0 && horizontallyOver && crossedSurface) {
+      box.y = platform.y - box.h
+      box.vy = 0
+      return true
+    }
+  }
+  return false
 }
 
 /**
@@ -260,16 +286,7 @@ export function applyGravity(p: Player, input: Input) {
 
 /** Lands the player on any platform whose surface it crossed this frame. */
 export function resolvePlatformCollisions(p: Player, level: Level) {
-  p.grounded = false
-  for (const platform of level.platforms) {
-    const horizontallyOver = p.x + p.w > platform.x && p.x < platform.x + platform.w
-    const crossedSurface = p.y + p.h >= platform.y && p.y + p.h - p.vy <= platform.y
-    if (p.vy >= 0 && horizontallyOver && crossedSurface) {
-      p.y = platform.y - p.h
-      p.vy = 0
-      p.grounded = true
-    }
-  }
+  p.grounded = landOnPlatform(p, level)
 }
 
 export function walkCycleFramesFor(speed: number): number {
@@ -291,14 +308,32 @@ export function updateAnimation(p: Player, dir: Direction) {
   }
 }
 
-export function moveEnemies(enemies: Enemy[]) {
+/**
+ * Enemies walk, fall and drop off ledges: SMB1's normal enemies only turn
+ * around when something blocks them, never at an edge. They stay dormant
+ * until the camera reaches them, the way the original spawns them from the
+ * level data as it scrolls.
+ */
+export function moveEnemies(enemies: Enemy[], level: Level, cameraX: number, framerule: boolean) {
   for (const enemy of enemies) {
     if (!enemy.alive) {
-      if (enemy.squashTimer > 0) enemy.squashTimer--
+      if (framerule && enemy.squashTimer > 0) enemy.squashTimer--
       continue
     }
+    if (!enemy.awake) {
+      if (enemy.x > cameraX + CANVAS_W) continue
+      enemy.awake = true
+    }
+
     enemy.x += enemy.vx
-    if (enemy.x < enemy.patrolMin || enemy.x > enemy.patrolMax) enemy.vx *= -1
+    enemy.vy = Math.min(enemy.vy + PHYSICS.enemyGravity, PHYSICS.enemyMaxFallSpeed)
+    enemy.y += enemy.vy
+    landOnPlatform(enemy, level)
+
+    // The level's outer walls are the only thing that turns them around.
+    if (enemy.x < 0) enemy.vx = Math.abs(enemy.vx)
+    if (enemy.x + enemy.w > level.width) enemy.vx = -Math.abs(enemy.vx)
+    if (enemy.y > CANVAS_H + PHYSICS.deathFallMargin) enemy.alive = false
   }
 }
 
@@ -318,14 +353,20 @@ export function resolveEnemyCollisions(
     const cameFromAbove = fallVy > 0 && bottomBeforeFall <= enemy.y + enemy.h * 0.5
     if (!cameFromAbove) return true
     enemy.alive = false
-    enemy.squashTimer = PHYSICS.squashDuration
+    enemy.squashTimer = PHYSICS.squashFramerules
     p.vy = PHYSICS.bounceVelocity
   }
   return false
 }
 
 /** Everything a single playing frame does to the world, in order. */
-export function stepWorld(p: Player, enemies: Enemy[], level: Level, input: Input): { died: boolean } {
+export function stepWorld(
+  p: Player,
+  enemies: Enemy[],
+  level: Level,
+  input: Input,
+  view: { cameraX: number; framerule: boolean }
+): { died: boolean } {
   const dir = applyHorizontalInput(p, input)
   applyJump(p, input)
   applyGravity(p, input)
@@ -336,10 +377,11 @@ export function stepWorld(p: Player, enemies: Enemy[], level: Level, input: Inpu
   const bottomBeforeFall = p.y + p.h - fallVy
 
   resolvePlatformCollisions(p, level)
-  p.x = clamp(p.x, 0, CANVAS_W - p.w)
+  // SMB1 never scrolls back, so the left edge of the view is a wall.
+  p.x = clamp(p.x, view.cameraX, level.width - p.w)
   updateAnimation(p, dir)
 
-  moveEnemies(enemies)
+  moveEnemies(enemies, level, view.cameraX, view.framerule)
   const hitByEnemy = resolveEnemyCollisions(p, enemies, fallVy, bottomBeforeFall)
   const fellOut = p.y > CANVAS_H + PHYSICS.deathFallMargin
   return { died: hitByEnemy || fellOut }

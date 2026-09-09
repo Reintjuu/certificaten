@@ -9,8 +9,8 @@ import { writeFileSync } from "node:fs"
 import { LEVELS, createPlayingState, hasDied, hasFinishedLevel, step } from "../src/engine"
 import { RUN_FRAME_BUDGET, actionFor, randomGenome, type Genome } from "./policy"
 
-const POPULATION_SIZE = 60
-const GENERATIONS = 30
+const POPULATION_SIZE = 80
+const GENERATIONS = 60
 const ELITE_COUNT = 4
 const TOURNAMENT_SIZE = 4
 const MUTATION_RATE = 0.12

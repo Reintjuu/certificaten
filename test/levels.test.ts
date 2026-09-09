@@ -26,17 +26,16 @@ describe("level geometry", () => {
       )
     })
 
-    test(`${name}: every enemy patrols on solid ground`, () => {
+    test(`${name}: every enemy starts standing on a platform`, () => {
+      // They walk off ledges from there, like SMB1's do, but they mustn't
+      // start in mid-air.
       for (const enemy of level.enemies) {
         const footY = enemy.y + ENEMY_SIZE.h
-        const start = platformUnder(level, enemy.patrolMin, ENEMY_SIZE.w, footY)
-        assert.ok(start, `an enemy at y=${enemy.y} is not standing on a platform`)
         assert.ok(
-          enemy.patrolMax + ENEMY_SIZE.w <= start.x + start.w,
-          `an enemy would walk off the right edge of its platform (patrol to ${enemy.patrolMax})`
+          platformUnder(level, enemy.x, ENEMY_SIZE.w, footY),
+          `an enemy at (${enemy.x}, ${enemy.y}) is not standing on a platform`
         )
-        assert.ok(enemy.patrolMin <= enemy.patrolMax, "patrol bounds are inverted")
-        assert.ok(enemy.vx !== 0, "a patrolling enemy needs a speed")
+        assert.ok(enemy.facing === 1 || enemy.facing === -1, "an enemy needs a facing direction")
       }
     })
 
@@ -58,13 +57,14 @@ describe("level geometry", () => {
     })
 
     test(`${name}: everything stays inside the screen`, () => {
+      assert.ok(level.width >= CANVAS_W, "a level is never narrower than the view")
       for (const platform of level.platforms) {
-        assert.ok(platform.x >= 0 && platform.x + platform.w <= CANVAS_W, "a platform sticks out sideways")
+        assert.ok(platform.x >= 0 && platform.x + platform.w <= level.width, "a platform sticks out sideways")
         assert.ok(platform.y >= 0 && platform.y <= CANVAS_H, "a platform sits outside the screen vertically")
         assert.ok(platform.w > 0 && platform.h > 0, "a platform has no size")
       }
       const certificate = level.certificate
-      assert.ok(certificate.x >= 0 && certificate.x + certificate.w <= CANVAS_W)
+      assert.ok(certificate.x >= 0 && certificate.x + certificate.w <= level.width)
       assert.ok(certificate.y >= 0)
     })
 

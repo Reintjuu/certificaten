@@ -27,6 +27,10 @@ De bewegingsregels komen uit de Super Mario Bros.-disassembly (`smbdis.asm`), ni
 | Max. valsnelheid | `$04` | 4 px per frame |
 | Terugstuiter na pletten | `$fd` | −3 px per frame |
 
+De levels zijn 1440px breed en de camera scrollt mee zoals in SMB1: hij volgt je zodra je voorbij het midden komt en gaat **nooit terug**, waardoor de linkerrand van het beeld een muur is. Vijanden hebben echte physics — ze vallen, en ze draaien *niet* om bij een rand maar lopen eraf, precies zoals SMB1's normale vijanden; ze blijven slapen tot de camera ze in beeld brengt, zoals het origineel ze uit de leveldata spawnt.
+
+Twee timers, allebei uit de ROM: de **framerule** (`IntervalTimerControl`, 21 frames) laat de interval-timers tikken — bij ons het platgedrukte-vijand-timertje — en de **leveltimer** is een aparte frame-timer die elke 24 frames één eenheid aftelt, dus 400 eenheden duren 160 seconden. Op nul ga je dood.
+
 Twee details die vaak verkeerd worden nagemaakt: SMB1 varieert de spronghoogte door bij het loslaten van de knop naar de *zware valzwaartekracht* om te schakelen (niet door de opwaartse snelheid af te kappen), en de sprongboog wordt gekozen uit een tabel van vijf rijen op basis van je snelheid bij het afzetten — hard rennen springt hoger én strakker.
 
 **Coyote time zit er bewust niet in.** Het origineel heeft het niet: springen vereist `Player_State == 0`. Dat toevoegen zou de besturing moderner maken, maar aantoonbaar on-NES.
