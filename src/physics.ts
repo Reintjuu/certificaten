@@ -344,7 +344,10 @@ export function applyHorizontalInput(p: Player, input: Input): Direction {
   // Crouching big Mario keeps his momentum but can't walk.
   const dir: Direction = p.crouching ? Direction.None : pressed;
   // Player_MovingDir keeps the last direction travelled when standing still,
-  // which is what lets you break into a run from a standstill.
+  // which is what lets you break into a run from a standstill. Approximation:
+  // the ROM flips it to the facing direction once a skid drops below $0b
+  // (ProcSkid), where this waits for the speed to actually cross zero. The
+  // difference lasts a fraction of a second at under 0.7px per frame.
   const movingDir: Direction = p.vx !== 0 ? (Math.sign(p.vx) as Direction) : p.facing;
   const pushingAlong = dir !== Direction.None && dir === movingDir;
 

@@ -41,6 +41,10 @@ let history: { levels: LevelHistory[] } = shipped;
 const RESTART_DELAY_FRAMES = 90;
 const PATH_SAMPLE_EVERY = 2;
 const BLINK_HALF = 30;
+const MENU_UP_KEYS = new Set(["ArrowUp", "w"]);
+const MENU_DOWN_KEYS = new Set(["ArrowDown", "s"]);
+const MENU_SELECT_KEYS = new Set(["Enter", " "]);
+const MENU_BACK_KEYS = new Set(["Escape"]);
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game")!;
 const ctx = canvas.getContext("2d")!;
@@ -234,20 +238,20 @@ function drawTraining(): void {
   ctx.fillStyle = COLORS.nightSky;
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   drawTextCentered(ctx, "AAN HET TRAINEN", CANVAS_W / 2, 50, 1, COLORS.highlight);
-  drawTextCentered(ctx, `LEVEL ${trainingLevel + 1} VAN ${LEVELS.length}`, CANVAS_W / 2, 100, 1, "#ffffff");
+  drawTextCentered(ctx, `LEVEL ${trainingLevel + 1} VAN ${LEVELS.length}`, CANVAS_W / 2, 100, 1, COLORS.text);
   drawTextCentered(
     ctx,
     `GENERATIE ${trainer.generations.length} VAN ${GENERATIONS}`,
     CANVAS_W / 2,
     130,
     1,
-    "#ffffff"
+    COLORS.text
   );
   if (latest) {
-    drawTextCentered(ctx, `${latest.solved} HAALDEN HET`, CANVAS_W / 2, 165, 1, "#8888cc");
+    drawTextCentered(ctx, `${latest.solved} HAALDEN HET`, CANVAS_W / 2, 165, 1, COLORS.dimText);
   }
   if (blinkTimer < BLINK_HALF) {
-    drawTextCentered(ctx, "ESCAPE OM TE STOPPEN", CANVAS_W / 2, 215, 1, "#5a5a8c");
+    drawTextCentered(ctx, "ESCAPE OM TE STOPPEN", CANVAS_W / 2, 215, 1, COLORS.faintText);
   }
 
   drawFitnessChart(chartCtx, trainer.generations, 0);
@@ -304,18 +308,18 @@ function toMenu(): void {
 }
 
 addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
+  if (MENU_BACK_KEYS.has(event.key)) {
     toMenu();
     return;
   }
   if (screen !== "menu") {
     return;
   }
-  if (event.key === "ArrowUp") {
+  if (MENU_UP_KEYS.has(event.key)) {
     menu.moveBy(-1);
-  } else if (event.key === "ArrowDown") {
+  } else if (MENU_DOWN_KEYS.has(event.key)) {
     menu.moveBy(1);
-  } else if (event.key === "Enter" || event.key === " ") {
+  } else if (MENU_SELECT_KEYS.has(event.key)) {
     menu.activate();
   } else {
     return;

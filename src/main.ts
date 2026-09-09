@@ -22,6 +22,7 @@ const LEFT_KEYS = new Set(["arrowleft", "a"]);
 const RIGHT_KEYS = new Set(["arrowright", "d"]);
 const RESET_KEYS = new Set(["r"]);
 const DOWN_KEYS = new Set(["arrowdown", "s"]);
+const RESTART_PROMPT = "DRUK OP R: OPNIEUW";
 // The NES B button: hold to run instead of walk.
 const RUN_KEYS = new Set(["shift", "x"]);
 
@@ -117,11 +118,11 @@ function drawDialogueBox(state: GameState): void {
   const wrapped = wrapText(line, maxChars);
 
   wrapped.forEach((row, i) => {
-    drawText(ctx, row, boxX + padding, boxY + padding + i * lineHeight, scale, "#ffffff");
+    drawText(ctx, row, boxX + padding, boxY + padding + i * lineHeight, scale, COLORS.text);
   });
 
   if (state.blinkTimer < BLINK_PERIOD_FRAMES / 2) {
-    drawText(ctx, "▼", boxX + boxW - 24, boxY + boxH - 22, 1, "#ffffff");
+    drawText(ctx, "▼", boxX + boxW - 24, boxY + boxH - 22, 1, COLORS.text);
   }
 }
 
@@ -129,11 +130,11 @@ function drawTitleScreen(state: GameState): void {
   ctx.fillStyle = COLORS.nightSky;
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-  drawTextCentered(ctx, "QUEESTE NAAR DE", CANVAS_W / 2, 60, 1, "#ffffff");
+  drawTextCentered(ctx, "QUEESTE NAAR DE", CANVAS_W / 2, 60, 1, COLORS.text);
   drawTextCentered(ctx, "CERTIFICATEN", CANVAS_W / 2, 84, 1, COLORS.highlight);
 
   if (state.blinkTimer < BLINK_PERIOD_FRAMES / 2) {
-    drawTextCentered(ctx, "PRESS START", CANVAS_W / 2, 170, 1, "#ffffff");
+    drawTextCentered(ctx, "PRESS START", CANVAS_W / 2, 170, 1, COLORS.text);
   }
 }
 
@@ -141,14 +142,14 @@ function drawGameComplete(): void {
   ctx.fillStyle = COLORS.nightSky;
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   drawTextCentered(ctx, "QUEESTE VOLBRACHT", CANVAS_W / 2, 100, 1, COLORS.highlight);
-  drawTextCentered(ctx, "DRUK OP R: OPNIEUW", CANVAS_W / 2, 140, 1, "#ffffff");
+  drawTextCentered(ctx, RESTART_PROMPT, CANVAS_W / 2, 140, 1, COLORS.text);
 }
 
 function drawDeadOverlay(): void {
-  ctx.fillStyle = "rgba(0,0,0,0.72)";
+  ctx.fillStyle = COLORS.shroud;
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  drawTextCentered(ctx, "JE BENT GESTRAND", CANVAS_W / 2, 110, 1, "#ffffff");
-  drawTextCentered(ctx, "DRUK OP R: OPNIEUW", CANVAS_W / 2, 150, 1, "#ffffff");
+  drawTextCentered(ctx, "JE BENT GESTRAND", CANVAS_W / 2, 110, 1, COLORS.text);
+  drawTextCentered(ctx, RESTART_PROMPT, CANVAS_W / 2, 150, 1, COLORS.text);
 }
 
 function drawWorld(state: GameState): void {

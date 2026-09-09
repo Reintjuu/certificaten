@@ -63,6 +63,81 @@ function levelWithPlatform(x: number, y: number, w: number): Level {
   };
 }
 
+/**
+ * End-to-end checks on the port: simulate a jump and compare what it actually
+ * does with what the ROM's tables predict. If a constant is mistyped or the
+ * units are misread, these move by far more than the tolerance.
+ *
+ * The measured arc lands about 3% under the textbook v^2 / 2g, because both
+ * this and the ROM step gravity once per frame rather than integrating
+ * continuously. That gap is the discretisation, not an error.
+ */
+describe("jump measurements match the ROM's tables", () => {
+  const GROUND = 200;
+
+  function jumpArc(runUp: boolean): { rise: number; length: number } {
+    const level = levelWithPlatform(0, GROUND, 480);
+    const p = player({ x: 20, y: GROUND - PHYSICS.playerSmallH, grounded: true });
+    const held = input({ jumpHeld: true, jumpPressed: true, right: runUp, run: runUp });
+
+    if (runUp) {
+      for (let frame = 0; frame < 200; frame++) {
+        applyHorizontalInput(p, input({ right: true, run: true }));
+        p.x += p.vx;
+      }
+    }
+
+    const startX = p.x;
+    const startFeet = p.y + p.h;
+    let highestFeet = startFeet;
+    applyJump(p, held);
+
+    for (let frame = 0; frame < 200; frame++) {
+      applyHorizontalInput(p, held);
+      applyGravity(p, held);
+      p.x += p.vx;
+      p.y += p.vy;
+      highestFeet = Math.min(highestFeet, p.y + p.h);
+      resolvePlatformCollisions(p, level);
+      if (frame > 2 && p.grounded) {
+        break;
+      }
+    }
+    return { rise: startFeet - highestFeet, length: p.x - startX };
+  }
+
+  test("a standing jump lifts the feet by v^2 / 2g of the slowest row", () => {
+    const predicted = PHYSICS.jumpVelocity[0] ** 2 / (2 * PHYSICS.gravityRising[0]);
+    const measured = jumpArc(false).rise;
+    assert.ok(
+      Math.abs(measured - predicted) < predicted * 0.05,
+      `standing jump rose ${measured.toFixed(1)}px, the tables predict ${predicted.toFixed(1)}px`
+    );
+  });
+
+  test("a running jump uses the fastest row, and clears more ground", () => {
+    const predicted = PHYSICS.jumpVelocity[4] ** 2 / (2 * PHYSICS.gravityRising[4]);
+    const running = jumpArc(true);
+    assert.ok(
+      Math.abs(running.rise - predicted) < predicted * 0.05,
+      `running jump rose ${running.rise.toFixed(1)}px, the tables predict ${predicted.toFixed(1)}px`
+    );
+    assert.ok(running.length > jumpArc(false).length, "a run-up must carry you further");
+  });
+
+  test("top speed is reached in about three quarters of a second", () => {
+    // 40 subpixels at an adder of $e4 is roughly 45 frames: SMB1's famously
+    // long run-up, and a good tell that the units are read correctly.
+    const p = player({ grounded: true, facing: Facing.Right });
+    let frames = 0;
+    while (p.vx < PHYSICS.maxRunSpeed && frames < 300) {
+      applyHorizontalInput(p, input({ right: true, run: true }));
+      frames++;
+    }
+    assert.ok(frames > 30 && frames < 60, `reached top speed in ${frames} frames`);
+  });
+});
+
 describe("clamp and overlaps", () => {
   test("clamp keeps a value inside its bounds", () => {
     assert.equal(clamp(5, 0, 10), 5);

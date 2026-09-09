@@ -21,6 +21,20 @@ export const COLORS = {
   dialogueBorder: "#ffffff",
   nightSky: "#0a0a2e",
   highlight: "#ffd84a",
+
+  // Menus and overlays.
+  text: "#ffffff",
+  dimText: "#8888cc",
+  faintText: "#5a5a8c",
+  selectedRow: "#20204a",
+  shroud: "rgba(0, 0, 0, 0.72)",
+
+  // The fitness chart.
+  chartBackground: "#141414",
+  chartMean: "#5a7fb8",
+  chartSolved: "#2f5d3a",
+  chartMarker: "#ff5a5a",
+  chartLabel: "#999999",
 } as const;
 
 /** Everything in the world is drawn in level coordinates, shifted by the camera. */

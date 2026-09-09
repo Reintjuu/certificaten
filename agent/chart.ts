@@ -8,12 +8,12 @@ const TOP_MARGIN = 10;
 const SIDE_MARGIN = 10;
 
 const COLORS = {
-  background: "#141414",
+  background: GAME_COLORS.chartBackground,
   best: GAME_COLORS.highlight,
-  mean: "#5a7fb8",
-  solved: "#2f5d3a",
-  marker: "#ff5a5a",
-  label: "#999999",
+  mean: GAME_COLORS.chartMean,
+  solved: GAME_COLORS.chartSolved,
+  marker: GAME_COLORS.chartMarker,
+  label: GAME_COLORS.chartLabel,
 } as const;
 
 export function drawFitnessChart(

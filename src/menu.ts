@@ -63,19 +63,19 @@ export class Menu {
       const x = CANVAS_W / 2 - width / 2;
 
       if (isSelected) {
-        ctx.fillStyle = "#20204a";
+        ctx.fillStyle = COLORS.selectedRow;
         ctx.fillRect(x - 24, y - 4, width + 48, GLYPH + 8);
         drawText(ctx, "▶", x - 22, y, SCALE, COLORS.highlight);
       }
-      drawText(ctx, item.label, x, y, SCALE, isSelected ? "#ffffff" : "#8888cc");
+      drawText(ctx, item.label, x, y, SCALE, isSelected ? COLORS.text : COLORS.dimText);
     });
 
     const hint = this.items[this.selected]?.hint;
     if (hint) {
-      drawTextCentered(ctx, hint, CANVAS_W / 2, CANVAS_H - 46, SCALE, "#8888cc");
+      drawTextCentered(ctx, hint, CANVAS_W / 2, CANVAS_H - 46, SCALE, COLORS.dimText);
     }
     if (blinkTimer < 30) {
-      drawTextCentered(ctx, "PIJLTJES EN ENTER", CANVAS_W / 2, CANVAS_H - 24, SCALE, "#5a5a8c");
+      drawTextCentered(ctx, "PIJLTJES EN ENTER", CANVAS_W / 2, CANVAS_H - 24, SCALE, COLORS.faintText);
     }
   }
 }
