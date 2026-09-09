@@ -1,7 +1,7 @@
-import { fileURLToPath } from "node:url"
-import { defineConfig } from "vite"
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "vite";
 
-const at = (path: string) => fileURLToPath(new URL(path, import.meta.url))
+const at = (path: string): string => fileURLToPath(new URL(path, import.meta.url));
 
 export default defineConfig({
   // A GitHub Pages project site is served from /<repo>/, so asset URLs need
@@ -17,4 +17,4 @@ export default defineConfig({
       },
     },
   },
-})
+});

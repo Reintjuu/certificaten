@@ -1,24 +1,27 @@
-import { certificateOn, enemyOn, platform, startOn } from "./level-builders"
+import { certificateOn, enemyOn, mushroomOn, platform, startOn } from "./level-builders";
 
-export type Platform = { x: number; y: number; w: number; h: number }
-export type EnemyDef = { x: number; y: number; facing: 1 | -1 }
-export type Rect = { x: number; y: number; w: number; h: number }
+export type Platform = { x: number; y: number; w: number; h: number };
+export type EnemyDef = { x: number; y: number; facing: 1 | -1 };
+export type Rect = { x: number; y: number; w: number; h: number };
+
+export type MushroomDef = { x: number; y: number };
 
 export type Level = {
   /** Levels are wider than the 480px view; the camera scrolls across them. */
-  width: number
+  width: number;
   /** Units of level time, counted down like SMB1's 400. */
-  timeLimit: number
-  platforms: Platform[]
-  enemies: EnemyDef[]
-  certificate: Rect
-  playerStart: { x: number; y: number }
-  intro: string[]
-  outro: string[]
-}
+  timeLimit: number;
+  platforms: Platform[];
+  enemies: EnemyDef[];
+  mushrooms: MushroomDef[];
+  certificate: Rect;
+  playerStart: { x: number; y: number };
+  intro: string[];
+  outro: string[];
+};
 
-const GROUND_Y = 240
-const LEVEL_WIDTH = 1440
+const GROUND_Y = 240;
+const LEVEL_WIDTH = 1440;
 
 const one = {
   ground: platform(0, GROUND_Y, 470, 30),
@@ -29,7 +32,7 @@ const one = {
   midLedge: platform(700, 185, 130),
   stepUp: platform(950, 185, 130),
   prize: platform(1170, 145, 190),
-}
+};
 
 const two = {
   ground: platform(0, GROUND_Y, 380, 30),
@@ -41,7 +44,7 @@ const two = {
   stair3: platform(820, 115, 120),
   balcony: platform(1030, 160, 150),
   prize: platform(1250, 120, 160),
-}
+};
 
 const three = {
   ground: platform(0, GROUND_Y, 300, 30),
@@ -51,7 +54,7 @@ const three = {
   landing: platform(860, 175, 180),
   pillar4: platform(1110, 140, 90),
   prize: platform(1250, 100, 190),
-}
+};
 
 export const LEVELS: Level[] = [
   {
@@ -63,6 +66,7 @@ export const LEVELS: Level[] = [
       enemyOn(one.midLedge, { offsetFromLeftEdge: 90, facing: -1 }),
       enemyOn(one.groundEnd, { offsetFromLeftEdge: 200, facing: -1 }),
     ],
+    mushrooms: [mushroomOn(one.firstLedge, 40)],
     certificate: certificateOn(one.prize, 70),
     playerStart: startOn(one.ground, 25),
     intro: [
@@ -82,6 +86,7 @@ export const LEVELS: Level[] = [
       enemyOn(two.groundEnd, { offsetFromLeftEdge: 260, facing: -1 }),
       enemyOn(two.balcony, { offsetFromLeftEdge: 100, facing: -1 }),
     ],
+    mushrooms: [mushroomOn(two.ledge, 40), mushroomOn(two.balcony, 60)],
     certificate: certificateOn(two.prize, 80),
     playerStart: startOn(two.ground, 20),
     intro: [
@@ -100,6 +105,7 @@ export const LEVELS: Level[] = [
       enemyOn(three.landing, { offsetFromLeftEdge: 120, facing: -1 }),
       enemyOn(three.prize, { offsetFromLeftEdge: 140, facing: -1 }),
     ],
+    mushrooms: [mushroomOn(three.pillar2, 30)],
     certificate: certificateOn(three.prize, 150),
     playerStart: startOn(three.ground, 20),
     intro: [
@@ -114,4 +120,4 @@ export const LEVELS: Level[] = [
       "'Helaas, vervallen per 1 januari.'",
     ],
   },
-]
+];

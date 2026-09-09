@@ -45,7 +45,7 @@ const TRIANGLE_RIGHT_GLYPH = [
   '0000000000000000',
 ]
 
-export const GLYPHS: Record<string, string[]> = {
+export const GLYPHS: Record<string, string[] | undefined> = {
   ' ': BLANK_GLYPH,
   '▶': TRIANGLE_RIGHT_GLYPH,
   '▼': TRIANGLE_DOWN_GLYPH,
