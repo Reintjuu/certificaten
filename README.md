@@ -98,11 +98,15 @@ Na het aanpassen van levelgeometrie: `npm run train-agent` opnieuw draaien, ande
 
 ## Hosten (GitHub Pages)
 
+Live op <https://reinierdevries.nl/certificaten/>, de AI-console op <https://reinierdevries.nl/certificaten/agent/replay.html>.
+
+`.github/workflows/build.yml` draait bij elke push en pull request op `master` lint, typecheck en de 117 tests, bouwt daarna, en pusht bij een push naar `master` de `dist/` naar de branch `github-pages` — waar Pages hem vandaan serveert.
+
 ```
-BASE_PATH=/<repo-naam>/ npm run build
+npm run build:github-pages   # vite build --base=/certificaten/
 ```
 
-Beide pagina's zitten in de build (`vite.config.ts` noemt ze allebei als entry; zonder dat was de replay-viewer een dev-only pagina die stilzwijgend ontbrak in `dist/`). `base` moet gezet worden omdat een project-site vanaf `/<repo>/` wordt geserveerd.
+Een project-site wordt geserveerd vanaf `/<repo-naam>/`, dus de repo heet `certificaten` en `--base` moet daarmee overeenkomen. Beide pagina's zitten in de build (`vite.config.ts` noemt ze allebei als entry; zonder dat was de replay-viewer een dev-only pagina die stilzwijgend ontbrak in `dist/`).
 
 De trainingsdata is een gewone `import` van `agent/training-history.json`, dus Vite bakt hem bij het bouwen in de bundle — geen fetch, geen los asset-bestand, werkt op elke statische host (~20 kB gzipped). Wat _niet_ kan op Pages: wegschrijven. `npm run train-agent` schrijft het bestand lokaal en je commit het; een trainer in de browser kan zijn resultaat alleen in het geheugen houden, in `localStorage` zetten of als download aanbieden.
 

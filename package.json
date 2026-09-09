@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:github-pages": "vite build --base=/certificaten/",
     "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
     "validate-levels": "tsx agent/validate.ts",
     "train-agent": "tsx agent/train.ts",
     "test": "node --import tsx --test test/*.test.ts",
