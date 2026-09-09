@@ -5,8 +5,30 @@
 // so it stays crisp under nearest-neighbor canvas scaling.
 const BLANK_GLYPH = Array(16).fill('0000000000000000')
 
+// Small hand-authored downward-triangle glyph, used as the dialogue box's
+// "more text follows" indicator -- not part of the derived TTF glyph set.
+const TRIANGLE_DOWN_GLYPH = [
+  '0000000000000000',
+  '0000000000000000',
+  '0000000000000000',
+  '0000000000000000',
+  '0011111111110000',
+  '0001111111111000',
+  '0000111111110000',
+  '0000011111100000',
+  '0000001111000000',
+  '0000000110000000',
+  '0000000000000000',
+  '0000000000000000',
+  '0000000000000000',
+  '0000000000000000',
+  '0000000000000000',
+  '0000000000000000',
+]
+
 export const GLYPHS: Record<string, string[]> = {
   ' ': BLANK_GLYPH,
+  '▼': TRIANGLE_DOWN_GLYPH,
   'A': [
     '0000000000000000',
     '0000111110000000',
