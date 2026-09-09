@@ -83,6 +83,16 @@ Sprites zijn tekst: elke regel is een rij pixels, een spatie is doorzichtig, elk
 
 Na het aanpassen van levelgeometrie: `npm run train-agent` opnieuw draaien, anders faalt de test die controleert of de opgeslagen AI-runs het level nog uitspelen.
 
+## Hosten (GitHub Pages)
+
+```
+BASE_PATH=/<repo-naam>/ npm run build
+```
+
+Beide pagina's zitten in de build (`vite.config.ts` noemt ze allebei als entry; zonder dat was de replay-viewer een dev-only pagina die stilzwijgend ontbrak in `dist/`). `base` moet gezet worden omdat een project-site vanaf `/<repo>/` wordt geserveerd.
+
+De trainingsdata is een gewone `import` van `agent/training-history.json`, dus Vite bakt hem bij het bouwen in de bundle — geen fetch, geen los asset-bestand, werkt op elke statische host (~20 kB gzipped). Wat *niet* kan op Pages: wegschrijven. `npm run train-agent` schrijft het bestand lokaal en je commit het; een trainer in de browser kan zijn resultaat alleen in het geheugen houden, in `localStorage` zetten of als download aanbieden.
+
 ## Attributie
 
 Het bitmap-font is afgeleid van de "Super Mario Bros. NES Font"-recreatie door Patrick Adams ([TheWolfBunny64](https://thewolfbunny64.itch.io/super-mario-bros-nes)), gebruikt met toestemming van de maker. Elk teken is eenmalig gerenderd en omgezet naar harde pixels (`src/font-glyphs.ts`); er zit geen los font-bestand in de app. De sprites zijn origineel handgetekend, geen Nintendo-assets.
