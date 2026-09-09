@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "validate-levels": "tsx agent/validate.ts",
-    "train-agent": "tsx agent/train.ts"
+    "train-agent": "tsx agent/train.ts",
+    "test": "node --import tsx --test test/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^26.5.0",
