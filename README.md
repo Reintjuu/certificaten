@@ -16,7 +16,8 @@ Besturing: pijltjes/A-D bewegen, spatie/W springen (kort tikken = lage hop, inge
 
 | Map | Wat |
 | --- | --- |
-| `src/engine.ts` | Pure, DOM-vrije physics/collision/state-machine (`step(state, input, levels)`). Bevat geen rendering en geen invoerafhandeling. De levels worden meegegeven, niet geïmporteerd, zodat tests met synthetische levels kunnen werken. |
+| `src/physics.ts` | De regels van de wereld per frame: versnellen, springen, vallen, landen, vijanden. Losse, pure functies die elk apart getest worden. |
+| `src/engine.ts` | De state machine eromheen (`step(state, input, levels)`): welk scherm, welk level, wanneer de physics-regels gelden. Levels worden meegegeven, niet geïmporteerd, zodat tests synthetische levels kunnen gebruiken. |
 | `src/levels.ts` | Leveldata. Platforms krijgen een naam; vijanden en het certificaat worden *op* een platform geplaatst (`enemyOn`, `certificateOn`, `startOn`), dus een platform verplaatsen verplaatst alles wat erop staat mee. |
 | `src/level-builders.ts` | Die plaatsingshelpers plus de maten van speler/vijand/certificaat, die de engine ook gebruikt. |
 | `src/render.ts` | Gedeelde tekencode (scène, sprites, kleuren), gebruikt door zowel het spel als de replay-viewer. |

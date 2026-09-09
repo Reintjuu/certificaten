@@ -9,6 +9,7 @@ import trainingHistory from "./training-history.json"
 import { LEVELS, createPlayingState, step, type GameState } from "../src/engine"
 import { COLORS, drawScene, drawEntities } from "../src/render"
 import { drawText } from "../src/font"
+import { drawFitnessChart } from "./chart"
 import { actionFor } from "./policy"
 
 // Types come from the trainer that writes this file, so the two can't drift.
@@ -67,14 +68,14 @@ function load(level: number, generation: number) {
   frame = 0
   restartCountdown = RESTART_DELAY_FRAMES
 
-  const { generations } = levelHistory()
+  const { generations, bestGeneration } = levelHistory()
   ghosts =
     mode === "all"
       ? generations.map(makeGhost)
       : [makeGhost(generations[generationIndex], generationIndex)]
 
   renderControls()
-  drawChart()
+  drawFitnessChart(chartCtx, generations, bestGeneration)
 }
 
 function button(label: string, active: boolean, onClick: () => void, title?: string) {
@@ -119,74 +120,6 @@ function renderControls() {
       )
     )
   )
-}
-
-function drawChart() {
-  const { generations, bestGeneration } = levelHistory()
-  const width = chartCanvas.width
-  const height = chartCanvas.height
-  const bottom = height - 26 // room for the legend underneath the plot
-  const top = 10
-
-  chartCtx.fillStyle = "#141414"
-  chartCtx.fillRect(0, 0, width, height)
-
-  const pointX = (index: number) =>
-    generations.length === 1 ? width / 2 : (index / (generations.length - 1)) * (width - 20) + 10
-
-  // Solved-count bars first, on their own scale: the best-fitness line
-  // saturates the moment one genome reaches the certificate (the solve bonus
-  // dwarfs everything else), so "how much of the population can finish the
-  // level" is what actually shows the population learning.
-  const maxSolved = Math.max(1, ...generations.map((record) => record.solved))
-  const barWidth = Math.max(2, (width - 20) / generations.length - 2)
-  chartCtx.fillStyle = "#2f5d3a"
-  generations.forEach((record, index) => {
-    const barHeight = (record.solved / maxSolved) * (bottom - top)
-    chartCtx.fillRect(pointX(index) - barWidth / 2, bottom - barHeight, barWidth, barHeight)
-  })
-
-  const fitnessValues = generations.flatMap((record) => [record.bestFitness, record.meanFitness])
-  const min = Math.min(...fitnessValues)
-  const span = Math.max(...fitnessValues) - min || 1
-  const pointY = (value: number) => bottom - ((value - min) / span) * (bottom - top)
-
-  const plot = (pick: (record: GenerationRecord) => number, color: string) => {
-    chartCtx.strokeStyle = color
-    chartCtx.lineWidth = 2
-    chartCtx.beginPath()
-    generations.forEach((record, index) => {
-      const x = pointX(index)
-      const y = pointY(pick(record))
-      if (index === 0) chartCtx.moveTo(x, y)
-      else chartCtx.lineTo(x, y)
-    })
-    chartCtx.stroke()
-  }
-
-  plot((record) => record.meanFitness, "#5a7fb8")
-  plot((record) => record.bestFitness, "#ffd84a")
-
-  chartCtx.fillStyle = "#ff5a5a"
-  chartCtx.beginPath()
-  chartCtx.arc(pointX(bestGeneration), pointY(generations[bestGeneration].bestFitness), 4, 0, Math.PI * 2)
-  chartCtx.fill()
-
-  chartCtx.font = "11px monospace"
-  const legend: [string, string][] = [
-    ["#ffd84a", "beste fitness"],
-    ["#5a7fb8", "gemiddelde fitness"],
-    ["#2f5d3a", `opgelost per generatie (max ${maxSolved})`],
-    ["#ff5a5a", "beste generatie"],
-  ]
-  let legendX = 10
-  for (const [color, label] of legend) {
-    chartCtx.fillStyle = color
-    chartCtx.fillRect(legendX, height - 16, 10, 8)
-    chartCtx.fillStyle = "#999"
-    chartCtx.fillText(label, legendX + 14, height - 8)
-    legendX += 24 + chartCtx.measureText(label).width
-  }
 }
 
 function outcomeOf(ghost: Ghost) {
