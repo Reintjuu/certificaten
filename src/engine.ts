@@ -1,31 +1,34 @@
 import { LEVELS } from "./levels"
+import type { Level } from "./levels"
 
 export { LEVELS }
+export type { Level }
 
 export const CANVAS_W = 480
 export const CANVAS_H = 270
 
 // Physics constants, adapted from the SMB1 disassembly's documented ratios
-// (see plan / README): weak gravity while rising with jump held, ~3x stronger
-// while falling; acceleration/friction instead of instant-snap movement;
-// jump height depends on how long the jump key is held.
-const ACCEL = 0.5
-const FRICTION = 0.6
-const MAX_SPEED = 2.4
-const GRAVITY_RISE = 0.22
-const GRAVITY_FALL = 0.6
-const JUMP_VELOCITY = -6.6
-const JUMP_VELOCITY_FAST = -7.2
-const JUMP_CUT_VY = -2.2
-const BOUNCE_VELOCITY = -4.2
-const SQUASH_DURATION = 20
-const WALK_FRAME_DISTANCE = 14
-const DEATH_FALL_MARGIN = 60
-
-const PLAYER_W = 16
-const PLAYER_H = 24
-const ENEMY_W = 16
-const ENEMY_H = 16
+// (see README): weak gravity while rising with jump held, ~3x stronger while
+// falling; acceleration/friction instead of instant-snap movement; jump height
+// depends on how long the jump key is held.
+export const PHYSICS = {
+  accel: 0.5,
+  friction: 0.6,
+  maxSpeed: 2.4,
+  gravityRise: 0.22,
+  gravityFall: 0.6,
+  jumpVelocity: -6.6,
+  jumpVelocityFast: -7.2,
+  jumpCutVy: -2.2,
+  bounceVelocity: -4.2,
+  squashDuration: 20,
+  walkFrameDistance: 14,
+  deathFallMargin: 60,
+  playerW: 16,
+  playerH: 24,
+  enemyW: 16,
+  enemyH: 16,
+} as const
 
 export type Player = {
   x: number
@@ -75,16 +78,32 @@ export type Input = {
   resetPressed: boolean
 }
 
+export const NO_INPUT: Input = {
+  left: false,
+  right: false,
+  jumpHeld: false,
+  jumpPressed: false,
+  confirmPressed: false,
+  resetPressed: false,
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
-function createPlayer(start: { x: number; y: number }): Player {
+function overlaps(
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number }
+) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+}
+
+export function createPlayer(start: { x: number; y: number }): Player {
   return {
     x: start.x,
     y: start.y,
-    w: PLAYER_W,
-    h: PLAYER_H,
+    w: PHYSICS.playerW,
+    h: PHYSICS.playerH,
     vx: 0,
     vy: 0,
     grounded: false,
@@ -94,12 +113,12 @@ function createPlayer(start: { x: number; y: number }): Player {
   }
 }
 
-function createEnemies(level: (typeof LEVELS)[number]): Enemy[] {
+export function createEnemies(level: Level): Enemy[] {
   return level.enemies.map((d) => ({
     x: d.x,
     y: d.y,
-    w: ENEMY_W,
-    h: ENEMY_H,
+    w: PHYSICS.enemyW,
+    h: PHYSICS.enemyH,
     vx: d.vx,
     patrolMin: d.patrolMin,
     patrolMax: d.patrolMax,
@@ -108,22 +127,8 @@ function createEnemies(level: (typeof LEVELS)[number]): Enemy[] {
   }))
 }
 
-function resetLevel(state: GameState) {
-  const level = LEVELS[state.levelIndex]
-  state.player = createPlayer(level.playerStart)
-  state.enemies = createEnemies(level)
-}
-
-function startDialogue(state: GameState, kind: DialogueKind) {
-  const level = LEVELS[state.levelIndex]
-  state.dialogueKind = kind
-  state.dialogueLines = kind === "intro" ? level.intro : level.outro
-  state.dialogueIndex = 0
-  state.phase = "dialogue"
-}
-
-export function createPlayingState(levelIndex: number): GameState {
-  const level = LEVELS[levelIndex]
+export function createPlayingState(levelIndex: number, levels: Level[] = LEVELS): GameState {
+  const level = levels[levelIndex]
   return {
     phase: "playing",
     levelIndex,
@@ -136,84 +141,91 @@ export function createPlayingState(levelIndex: number): GameState {
   }
 }
 
-export function createInitialState(): GameState {
-  const state: GameState = {
-    phase: "title",
-    levelIndex: 0,
-    player: createPlayer(LEVELS[0].playerStart),
-    enemies: createEnemies(LEVELS[0]),
-    dialogueLines: [],
-    dialogueIndex: 0,
-    dialogueKind: "intro",
-    blinkTimer: 0,
-  }
-  return state
+export function createInitialState(levels: Level[] = LEVELS): GameState {
+  return { ...createPlayingState(0, levels), phase: "title" }
 }
 
-function stepPlaying(state: GameState, input: Input) {
-  const p = state.player
-  const level = LEVELS[state.levelIndex]
+function resetLevel(state: GameState, levels: Level[]) {
+  const level = levels[state.levelIndex]
+  state.player = createPlayer(level.playerStart)
+  state.enemies = createEnemies(level)
+}
 
+function startDialogue(state: GameState, kind: DialogueKind, levels: Level[]) {
+  const level = levels[state.levelIndex]
+  state.dialogueKind = kind
+  state.dialogueLines = kind === "intro" ? level.intro : level.outro
+  state.dialogueIndex = 0
+  state.phase = "dialogue"
+}
+
+// --- physics steps, each small enough to unit-test on its own ---
+
+export function applyHorizontalInput(p: Player, input: Input) {
   const dir = (input.right ? 1 : 0) - (input.left ? 1 : 0)
   if (dir !== 0) {
-    p.vx = clamp(p.vx + dir * ACCEL, -MAX_SPEED, MAX_SPEED)
+    p.vx = clamp(p.vx + dir * PHYSICS.accel, -PHYSICS.maxSpeed, PHYSICS.maxSpeed)
     p.facing = dir as 1 | -1
-  } else if (p.vx !== 0) {
-    const sign = Math.sign(p.vx)
-    const next = p.vx - sign * FRICTION
-    p.vx = Math.sign(next) === sign ? next : 0
+    return dir
   }
+  if (p.vx !== 0) {
+    const sign = Math.sign(p.vx)
+    const braked = p.vx - sign * PHYSICS.friction
+    p.vx = Math.sign(braked) === sign ? braked : 0
+  }
+  return 0
+}
 
+export function applyJump(p: Player, input: Input) {
+  // Jumping requires actually standing on something. The original prototype
+  // used "|vy| < 0.1", which is also true at a jump's apex -- that was the
+  // infinite-jump bug.
   if (input.jumpPressed && p.grounded) {
-    p.vy = Math.abs(p.vx) >= MAX_SPEED * 0.9 ? JUMP_VELOCITY_FAST : JUMP_VELOCITY
+    const fast = Math.abs(p.vx) >= PHYSICS.maxSpeed * 0.9
+    p.vy = fast ? PHYSICS.jumpVelocityFast : PHYSICS.jumpVelocity
     p.grounded = false
   }
-
+  // Releasing the button while still rising cuts the jump short.
   if (p.vy < 0 && !input.jumpHeld) {
-    p.vy = Math.max(p.vy, JUMP_CUT_VY)
+    p.vy = Math.max(p.vy, PHYSICS.jumpCutVy)
   }
+}
 
-  if (p.vy < 0 && input.jumpHeld) p.vy += GRAVITY_RISE
-  else p.vy += GRAVITY_FALL
+export function applyGravity(p: Player, input: Input) {
+  const rising = p.vy < 0 && input.jumpHeld
+  p.vy += rising ? PHYSICS.gravityRise : PHYSICS.gravityFall
+}
 
-  p.x += p.vx
-  p.y += p.vy
-  const fallVy = p.vy // pre-collision fall speed
-  const bottomBeforeFall = p.y + p.h - fallVy // used below so a platform
-  // landing (which snaps p.y and zeroes p.vy) can't hide that we were also
-  // falling onto an enemy from above on this same frame.
-
+/** Lands the player on any platform whose surface it crossed this frame. */
+export function resolvePlatformCollisions(p: Player, level: Level) {
   p.grounded = false
   for (const plat of level.platforms) {
-    if (
-      p.vy >= 0 &&
-      p.x + p.w > plat.x &&
-      p.x < plat.x + plat.w &&
-      p.y + p.h >= plat.y &&
-      p.y + p.h - p.vy <= plat.y
-    ) {
+    const horizontallyOver = p.x + p.w > plat.x && p.x < plat.x + plat.w
+    const crossedSurface = p.y + p.h >= plat.y && p.y + p.h - p.vy <= plat.y
+    if (p.vy >= 0 && horizontallyOver && crossedSurface) {
       p.y = plat.y - p.h
       p.vy = 0
       p.grounded = true
     }
   }
+}
 
-  p.x = clamp(p.x, 0, CANVAS_W - p.w)
-
-  if (p.grounded) {
-    if (dir !== 0) {
-      p.animTimer += Math.abs(p.vx)
-      if (p.animTimer > WALK_FRAME_DISTANCE) {
-        p.animTimer = 0
-        p.animFrame = p.animFrame === 0 ? 1 : 0
-      }
-    } else {
-      p.animTimer = 0
-      p.animFrame = 0
-    }
+export function updateAnimation(p: Player, dir: number) {
+  if (!p.grounded) return
+  if (dir === 0) {
+    p.animTimer = 0
+    p.animFrame = 0
+    return
   }
+  p.animTimer += Math.abs(p.vx)
+  if (p.animTimer > PHYSICS.walkFrameDistance) {
+    p.animTimer = 0
+    p.animFrame = p.animFrame === 0 ? 1 : 0
+  }
+}
 
-  for (const e of state.enemies) {
+export function moveEnemies(enemies: Enemy[]) {
+  for (const e of enemies) {
     if (!e.alive) {
       if (e.squashTimer > 0) e.squashTimer--
       continue
@@ -221,35 +233,80 @@ function stepPlaying(state: GameState, input: Input) {
     e.x += e.vx
     if (e.x < e.patrolMin || e.x > e.patrolMax) e.vx *= -1
   }
+}
 
-  for (const e of state.enemies) {
-    if (!e.alive) continue
-    const overlapX = p.x + p.w > e.x && p.x < e.x + e.w
-    const overlapY = p.y + p.h >= e.y && p.y < e.y + e.h
-    if (!overlapX || !overlapY) continue
+/**
+ * Returns true if the player died. `fallVy` and `bottomBeforeFall` are taken
+ * from before platform collision ran, so landing on a platform (which zeroes
+ * vy and snaps y) can't hide that we were also dropping onto an enemy.
+ */
+export function resolveEnemyCollisions(
+  p: Player,
+  enemies: Enemy[],
+  fallVy: number,
+  bottomBeforeFall: number
+): boolean {
+  for (const e of enemies) {
+    if (!e.alive || !overlaps(p, e)) continue
     const cameFromAbove = fallVy > 0 && bottomBeforeFall <= e.y + e.h * 0.5
-    if (cameFromAbove) {
-      e.alive = false
-      e.squashTimer = SQUASH_DURATION
-      p.vy = BOUNCE_VELOCITY
-    } else {
-      state.phase = "dead"
-      return
-    }
+    if (!cameFromAbove) return true
+    e.alive = false
+    e.squashTimer = PHYSICS.squashDuration
+    p.vy = PHYSICS.bounceVelocity
   }
+  return false
+}
 
-  const c = level.certificate
-  if (p.x < c.x + c.w && p.x + p.w > c.x && p.y < c.y + c.h && p.y + p.h > c.y) {
-    startDialogue(state, "outro")
+function stepPlaying(state: GameState, input: Input, levels: Level[]) {
+  const p = state.player
+  const level = levels[state.levelIndex]
+
+  const dir = applyHorizontalInput(p, input)
+  applyJump(p, input)
+  applyGravity(p, input)
+
+  p.x += p.vx
+  p.y += p.vy
+  const fallVy = p.vy
+  const bottomBeforeFall = p.y + p.h - fallVy
+
+  resolvePlatformCollisions(p, level)
+  p.x = clamp(p.x, 0, CANVAS_W - p.w)
+  updateAnimation(p, dir)
+
+  moveEnemies(state.enemies)
+  if (resolveEnemyCollisions(p, state.enemies, fallVy, bottomBeforeFall)) {
+    state.phase = "dead"
     return
   }
 
-  if (p.y > CANVAS_H + DEATH_FALL_MARGIN) {
+  if (overlaps(p, level.certificate)) {
+    startDialogue(state, "outro", levels)
+    return
+  }
+
+  if (p.y > CANVAS_H + PHYSICS.deathFallMargin) {
     state.phase = "dead"
   }
 }
 
-export function step(state: GameState, input: Input): GameState {
+function advanceDialogue(state: GameState, levels: Level[]) {
+  state.dialogueIndex++
+  if (state.dialogueIndex < state.dialogueLines.length) return
+
+  if (state.dialogueKind === "intro") {
+    resetLevel(state, levels)
+    state.phase = "playing"
+  } else if (state.levelIndex + 1 < levels.length) {
+    state.levelIndex++
+    startDialogue(state, "intro", levels)
+  } else {
+    state.phase = "gameComplete"
+  }
+}
+
+/** Advances the game by one frame. Pure: never mutates the state passed in. */
+export function step(state: GameState, input: Input, levels: Level[] = LEVELS): GameState {
   const next: GameState = {
     ...state,
     player: { ...state.player },
@@ -259,34 +316,24 @@ export function step(state: GameState, input: Input): GameState {
 
   switch (next.phase) {
     case "title":
-      if (input.confirmPressed) startDialogue(next, "intro")
+      if (input.confirmPressed) startDialogue(next, "intro", levels)
       break
 
     case "dialogue":
-      if (input.confirmPressed) {
-        next.dialogueIndex++
-        if (next.dialogueIndex >= next.dialogueLines.length) {
-          if (next.dialogueKind === "intro") {
-            resetLevel(next)
-            next.phase = "playing"
-          } else if (next.levelIndex + 1 < LEVELS.length) {
-            next.levelIndex++
-            startDialogue(next, "intro")
-          } else {
-            next.phase = "gameComplete"
-          }
-        }
-      }
+      if (input.confirmPressed) advanceDialogue(next, levels)
       break
 
     case "playing":
-      stepPlaying(next, input)
-      if (input.resetPressed) resetLevel(next)
+      if (input.resetPressed) {
+        resetLevel(next, levels)
+      } else {
+        stepPlaying(next, input, levels)
+      }
       break
 
     case "dead":
       if (input.resetPressed) {
-        resetLevel(next)
+        resetLevel(next, levels)
         next.phase = "playing"
       }
       break
@@ -294,7 +341,7 @@ export function step(state: GameState, input: Input): GameState {
     case "gameComplete":
       if (input.resetPressed) {
         next.levelIndex = 0
-        resetLevel(next)
+        resetLevel(next, levels)
         next.phase = "title"
       }
       break
