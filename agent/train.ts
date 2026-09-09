@@ -7,7 +7,7 @@
 // curve -- the weights are the recording, since the engine is deterministic.
 import { writeFileSync } from "node:fs"
 import { LEVELS, createPlayingState, step } from "../src/engine"
-import { actionFor, randomGenome, type Genome } from "./policy"
+import { RUN_FRAME_BUDGET, actionFor, randomGenome, type Genome } from "./policy"
 
 const POPULATION_SIZE = 60
 const GENERATIONS = 30
@@ -15,7 +15,6 @@ const ELITE_COUNT = 4
 const TOURNAMENT_SIZE = 4
 const MUTATION_RATE = 0.12
 const MUTATION_SCALE = 0.6
-const FRAME_BUDGET = 900 // 15s at 60fps -- plenty for these small levels
 const SOLVE_BONUS = 2000
 
 export type GenerationRecord = {
@@ -43,7 +42,7 @@ export function evaluate(genome: Genome, levelIndex: number): { fitness: number;
   let solved = false
   let frame = 0
 
-  for (; frame < FRAME_BUDGET; frame++) {
+  for (; frame < RUN_FRAME_BUDGET; frame++) {
     if (state.phase === "dialogue") {
       solved = true
       break
@@ -90,7 +89,7 @@ function nextGeneration(population: Genome[], fitnesses: number[]): Genome[] {
   return offspring
 }
 
-export function trainLevel(levelIndex: number, log = console.log): LevelHistory {
+function trainLevel(levelIndex: number): LevelHistory {
   let population = Array.from({ length: POPULATION_SIZE }, randomGenome)
   const generations: GenerationRecord[] = []
 
@@ -108,7 +107,7 @@ export function trainLevel(levelIndex: number, log = console.log): LevelHistory 
     })
 
     const record = generations[generations.length - 1]
-    log(
+    console.log(
       `  level ${levelIndex + 1} gen ${generation}/${GENERATIONS}: ` +
         `best ${record.bestFitness.toFixed(1)}, mean ${record.meanFitness.toFixed(1)}, ` +
         `${record.solved}/${POPULATION_SIZE} solved`

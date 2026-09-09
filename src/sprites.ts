@@ -24,7 +24,3 @@ export function drawSprite(ctx: CanvasRenderingContext2D, frame: Frame, x: numbe
     }
   }
 }
-
-export function spriteSize(frame: Frame, scale: number) {
-  return { w: frame[0].length * scale, h: frame.length * scale }
-}

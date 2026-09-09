@@ -4,9 +4,14 @@
 // in both.
 import { CANVAS_W, CANVAS_H, type GameState, type Input, type Level } from "../src/engine"
 
+/** How long a single attempt at a level may last, in frames (15s at 60fps).
+ * The trainer records runs against this and the viewer replays them against
+ * it, so it has to be one number, not two. */
+export const RUN_FRAME_BUDGET = 900
+
 export const INPUT_SIZE = 9
-export const HIDDEN_SIZE = 8
-export const OUTPUT_SIZE = 2
+const HIDDEN_SIZE = 8
+const OUTPUT_SIZE = 2
 export const GENOME_SIZE = HIDDEN_SIZE * (INPUT_SIZE + 1) + OUTPUT_SIZE * (HIDDEN_SIZE + 1)
 
 export type Genome = number[]

@@ -10,7 +10,7 @@ import { LEVELS, createPlayingState, step, type GameState } from "../src/engine"
 import { COLORS, drawScene, drawEntities } from "../src/render"
 import { drawText } from "../src/font"
 import { drawFitnessChart } from "./chart"
-import { actionFor } from "./policy"
+import { RUN_FRAME_BUDGET, actionFor } from "./policy"
 
 // Types come from the trainer that writes this file, so the two can't drift.
 // `import type` is erased, so no Node-only code reaches the browser bundle.
@@ -26,7 +26,6 @@ type Ghost = {
 
 const history: { levels: LevelHistory[] } = trainingHistory
 
-const FRAME_BUDGET = 900
 const RESTART_DELAY_FRAMES = 90
 const PATH_SAMPLE_EVERY = 2
 
@@ -190,7 +189,7 @@ function draw() {
 
 function advance(ghost: Ghost) {
   if (ghost.finished) return
-  if (ghost.state.phase !== "playing" || frame >= FRAME_BUDGET) {
+  if (ghost.state.phase !== "playing" || frame >= RUN_FRAME_BUDGET) {
     ghost.finished = true
     return
   }
@@ -216,5 +215,14 @@ function tick() {
   requestAnimationFrame(tick)
 }
 
-load(0, history.levels[0].bestGeneration)
-tick()
+// The recording is a separate file from the levels it was trained on, so it
+// can go stale -- say a level was added without retraining. Say so plainly
+// instead of failing on an undefined lookup halfway through a frame.
+if (history.levels.length < LEVELS.length) {
+  statusEl.textContent =
+    `De opname dekt ${history.levels.length} van de ${LEVELS.length} levels. ` +
+    `Draai "npm run train-agent" opnieuw om hem bij te werken.`
+} else {
+  load(0, history.levels[0].bestGeneration)
+  tick()
+}

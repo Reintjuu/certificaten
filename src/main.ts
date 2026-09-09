@@ -10,15 +10,26 @@ const JUMP_KEYS = new Set([" ", "w", "arrowup"])
 const CONFIRM_KEYS = new Set([" ", "enter"])
 const LEFT_KEYS = new Set(["arrowleft", "a"])
 const RIGHT_KEYS = new Set(["arrowright", "d"])
+const RESET_KEYS = new Set(["r"])
+
+// Only the keys that would otherwise scroll the page. Swallowing every
+// keydown also swallowed F5, Ctrl+R and Tab, so the page couldn't be
+// refreshed while it had focus.
+const SCROLL_KEYS = new Set([" ", "arrowup", "arrowdown", "arrowleft", "arrowright"])
 
 const keys = new Set<string>()
 let prevKeys = new Set<string>()
 
 addEventListener("keydown", (e) => {
-  e.preventDefault()
-  keys.add(e.key.toLowerCase())
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  const key = e.key.toLowerCase()
+  if (SCROLL_KEYS.has(key)) e.preventDefault()
+  keys.add(key)
 })
 addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()))
+// Without this, alt-tabbing away mid-run leaves the key "held" forever and
+// the player keeps walking after you come back.
+addEventListener("blur", () => keys.clear())
 
 function anyPressed(current: Set<string>, previous: Set<string>, mapped: Set<string>) {
   for (const k of mapped) {
@@ -39,7 +50,7 @@ function readInput(): Input {
     jumpHeld: anyHeld(keys, JUMP_KEYS),
     jumpPressed: anyPressed(keys, prevKeys, JUMP_KEYS),
     confirmPressed: anyPressed(keys, prevKeys, CONFIRM_KEYS),
-    resetPressed: anyPressed(keys, prevKeys, new Set(["r"])),
+    resetPressed: anyPressed(keys, prevKeys, RESET_KEYS),
   }
 }
 

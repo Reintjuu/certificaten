@@ -113,7 +113,7 @@ function shouldJump(state: GameState, standing: Platform | undefined, target: Pl
  * -- exactly like a human's thumb. Holding for several frames matters: a
  * one-frame tap triggers the engine's short-hop cut.
  */
-export function makeHeuristicBot() {
+function makeHeuristicBot() {
   let jumpFramesLeft = 0
   let targetY: number | null = null
 
@@ -145,7 +145,7 @@ export function makeHeuristicBot() {
 
 type LevelResult = { ok: boolean; frames: number; reason?: string }
 
-export function validateLevel(levelIndex: number): LevelResult {
+function validateLevel(levelIndex: number): LevelResult {
   let state = createPlayingState(levelIndex)
   const decide = makeHeuristicBot()
 
@@ -157,10 +157,10 @@ export function validateLevel(levelIndex: number): LevelResult {
   return { ok: false, frames: FRAME_BUDGET, reason: "timeout" }
 }
 
-export function runValidation(log = console.log) {
+function runValidation() {
   const results = LEVELS.map((_, index) => validateLevel(index))
   results.forEach((result, index) => {
-    log(`Level ${index + 1}/${LEVELS.length}: ${result.ok ? "OK" : `FAIL (${result.reason})`} - ${result.frames} frames`)
+    console.log(`Level ${index + 1}/${LEVELS.length}: ${result.ok ? "OK" : `FAIL (${result.reason})`} - ${result.frames} frames`)
   })
   return results.every((result) => result.ok)
 }

@@ -48,7 +48,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, level: Level) {
   ctx.fillRect(certificate.x + 7, certificate.y + 8, 4, 11)
 }
 
-export function playerFrame(player: Player): Frame {
+function playerFrame(player: Player): Frame {
   if (!player.grounded) return MarioJump
   if (player.vx !== 0) return player.animFrame === 0 ? MarioWalk1 : MarioWalk2
   return MarioIdle

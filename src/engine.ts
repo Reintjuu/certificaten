@@ -11,8 +11,8 @@ export type { Level }
 export { CANVAS_W, CANVAS_H, PHYSICS, NO_INPUT } from "./physics"
 export type { Player, Enemy, Input, Direction } from "./physics"
 
-export type GamePhase = "title" | "dialogue" | "playing" | "dead" | "gameComplete"
-export type DialogueKind = "intro" | "outro"
+type GamePhase = "title" | "dialogue" | "playing" | "dead" | "gameComplete"
+type DialogueKind = "intro" | "outro"
 
 export type GameState = {
   phase: GamePhase
