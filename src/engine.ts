@@ -1,5 +1,6 @@
 import { LEVELS } from "./levels"
 import type { Level } from "./levels"
+import { ENEMY_SIZE, PLAYER_SIZE } from "./level-builders"
 
 export { LEVELS }
 export type { Level }
@@ -24,10 +25,10 @@ export const PHYSICS = {
   squashDuration: 20,
   walkFrameDistance: 14,
   deathFallMargin: 60,
-  playerW: 16,
-  playerH: 24,
-  enemyW: 16,
-  enemyH: 16,
+  playerW: PLAYER_SIZE.w,
+  playerH: PLAYER_SIZE.h,
+  enemyW: ENEMY_SIZE.w,
+  enemyH: ENEMY_SIZE.h,
 } as const
 
 export type Player = {
@@ -86,6 +87,13 @@ export const NO_INPUT: Input = {
   confirmPressed: false,
   resetPressed: false,
 }
+
+/** Compile-time exhaustiveness guard: adding a GamePhase becomes an error. */
+export function assertNever(value: never): never {
+  throw new Error(`Unhandled case: ${String(value)}`)
+}
+
+export type Direction = -1 | 0 | 1
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
@@ -161,11 +169,11 @@ function startDialogue(state: GameState, kind: DialogueKind, levels: Level[]) {
 
 // --- physics steps, each small enough to unit-test on its own ---
 
-export function applyHorizontalInput(p: Player, input: Input) {
-  const dir = (input.right ? 1 : 0) - (input.left ? 1 : 0)
+export function applyHorizontalInput(p: Player, input: Input): Direction {
+  const dir: Direction = input.right && !input.left ? 1 : input.left && !input.right ? -1 : 0
   if (dir !== 0) {
     p.vx = clamp(p.vx + dir * PHYSICS.accel, -PHYSICS.maxSpeed, PHYSICS.maxSpeed)
-    p.facing = dir as 1 | -1
+    p.facing = dir
     return dir
   }
   if (p.vx !== 0) {
@@ -210,7 +218,7 @@ export function resolvePlatformCollisions(p: Player, level: Level) {
   }
 }
 
-export function updateAnimation(p: Player, dir: number) {
+export function updateAnimation(p: Player, dir: Direction) {
   if (!p.grounded) return
   if (dir === 0) {
     p.animTimer = 0
@@ -345,6 +353,9 @@ export function step(state: GameState, input: Input, levels: Level[] = LEVELS): 
         next.phase = "title"
       }
       break
+
+    default:
+      assertNever(next.phase)
   }
 
   return next

@@ -9,10 +9,12 @@ import trainingHistory from "./training-history.json"
 import { LEVELS, createPlayingState, step, type GameState } from "../src/engine"
 import { COLORS, drawScene, drawEntities } from "../src/render"
 import { drawText } from "../src/font"
-import { actionFor, type Genome } from "./policy"
+import { actionFor } from "./policy"
 
-type GenerationRecord = { generation: number; bestFitness: number; meanFitness: number; solved: number; genome: Genome }
-type LevelHistory = { level: number; generations: GenerationRecord[]; bestGeneration: number }
+// Types come from the trainer that writes this file, so the two can't drift.
+// `import type` is erased, so no Node-only code reaches the browser bundle.
+import type { GenerationRecord, LevelHistory } from "./train"
+
 type Ghost = {
   record: GenerationRecord
   index: number
@@ -21,7 +23,7 @@ type Ghost = {
   finished: boolean
 }
 
-const history = trainingHistory as unknown as { levels: LevelHistory[] }
+const history: { levels: LevelHistory[] } = trainingHistory
 
 const FRAME_BUDGET = 900
 const RESTART_DELAY_FRAMES = 90

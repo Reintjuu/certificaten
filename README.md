@@ -17,12 +17,13 @@ Besturing: pijltjes/A-D bewegen, spatie/W springen (kort tikken = lage hop, inge
 | Map | Wat |
 | --- | --- |
 | `src/engine.ts` | Pure, DOM-vrije physics/collision/state-machine (`step(state, input, levels)`). Bevat geen rendering en geen invoerafhandeling. De levels worden meegegeven, niet geïmporteerd, zodat tests met synthetische levels kunnen werken. |
-| `src/levels.ts` | Leveldata: platforms, vijanden, certificaat, intro/outro-dialoog. Nieuw level = object aan `LEVELS` toevoegen. |
+| `src/levels.ts` | Leveldata. Platforms krijgen een naam; vijanden en het certificaat worden *op* een platform geplaatst (`enemyOn`, `certificateOn`, `startOn`), dus een platform verplaatsen verplaatst alles wat erop staat mee. |
+| `src/level-builders.ts` | Die plaatsingshelpers plus de maten van speler/vijand/certificaat, die de engine ook gebruikt. |
 | `src/render.ts` | Gedeelde tekencode (scène, sprites, kleuren), gebruikt door zowel het spel als de replay-viewer. |
 | `src/sprites.ts`, `src/font.ts` | Origineel handgetekende pixel-art en het bitmap-font. |
 | `src/main.ts` | Dunne browser-shell: toetsen → `Input`, loop, schermen. Geen physics. |
 | `agent/` | Losstaande test-/AI-tooling; importeert alleen de engine + levels, nooit `main.ts`. |
-| `test/` | Unit tests (Node's ingebouwde test runner, geen extra framework). |
+| `test/` | Unit tests (Node's ingebouwde test runner, geen extra framework), inclusief controles op leveldata en pixel-art: niets zweeft, vijanden lopen niet van hun platform, sprites zijn rechthoekig en even groot als hun hitbox. |
 
 ## Agent-tooling
 
@@ -41,6 +42,26 @@ De opgeslagen gewichten *zijn* de opname — de engine is deterministisch, dus e
 Trainen gebeurt volledig headless en zo snel als de CPU kan, niet op speelsnelheid: de laatste run simuleerde 3,45 miljoen frames (≈16 uur speeltijd op 60fps) in 4,7 seconden, ruwweg 12.000× realtime. De trainer print die cijfers zelf aan het eind.
 
 `validate-levels` is bewust een simpele scripted bot: een snelle kanarie, geen goede speler. Hij haalt level 1 en 2, maar struikelt over de langere klim in level 3 — dat is een beperking van zijn eigen regels, niet van het level. De echte controle of elk level haalbaar is, is de getrainde agent (`npm test` speelt de opgeslagen beste genome per level opnieuw af en eist dat die het certificaat haalt).
+
+## Een level of sprite aanpassen
+
+Een level toevoegen: geef de platforms een naam en plaats de rest erop.
+
+```ts
+const four = { ground: platform(0, 240, 480, 30), ledge: platform(120, 180, 80) }
+
+{
+  platforms: Object.values(four),
+  enemies: [enemyOn(four.ledge, { from: 10, to: 50, speed: 0.8 })],
+  certificate: certificateOn(four.ledge, 30),
+  playerStart: startOn(four.ground, 20),
+  intro: ["..."], outro: ["..."],
+}
+```
+
+Sprites zijn tekst: elke regel is een rij pixels, een spatie is doorzichtig, elke letter is een kleur uit `PALETTE` in `src/sprite-frames.ts`. Gewoon de letters aanpassen. `npm test` controleert daarna of het frame rechthoekig is, of alle letters bestaan, en of het even groot is als de hitbox.
+
+Na het aanpassen van levelgeometrie: `npm run train-agent` opnieuw draaien, anders faalt de test die controleert of de opgeslagen AI-runs het level nog uitspelen.
 
 ## Attributie
 

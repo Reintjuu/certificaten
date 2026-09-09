@@ -1,6 +1,6 @@
 import { PALETTE, MarioIdle, MarioWalk1, MarioWalk2, MarioJump, Goomba, GoombaSquashed, type Frame } from "./sprite-frames"
 
-export { MarioIdle, MarioWalk1, MarioWalk2, MarioJump, Goomba, GoombaSquashed }
+export { PALETTE, MarioIdle, MarioWalk1, MarioWalk2, MarioJump, Goomba, GoombaSquashed }
 export type { Frame }
 
 export function drawSprite(ctx: CanvasRenderingContext2D, frame: Frame, x: number, y: number, scale: number, flipX = false) {

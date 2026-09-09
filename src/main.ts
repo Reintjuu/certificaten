@@ -1,4 +1,4 @@
-import { CANVAS_W, CANVAS_H, LEVELS, createInitialState, step, type GameState, type Input } from "./engine"
+import { CANVAS_W, CANVAS_H, LEVELS, assertNever, createInitialState, step, type GameState, type Input } from "./engine"
 import { COLORS, drawScene, drawEntities } from "./render"
 import { drawText, drawTextCentered, wrapText } from "./font"
 
@@ -125,6 +125,8 @@ function draw(state: GameState) {
     case "gameComplete":
       drawGameComplete()
       return
+    default:
+      assertNever(state.phase)
   }
 }
 
