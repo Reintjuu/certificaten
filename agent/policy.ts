@@ -2,7 +2,7 @@
 // library) mapping the game state to a movement decision. Shared by the
 // trainer and the replay viewer so a recorded genome always behaves the same
 // in both.
-import { CANVAS_W, CANVAS_H, LEVELS, type GameState, type Input } from "../src/engine"
+import { CANVAS_W, CANVAS_H, type GameState, type Input, type Level } from "../src/engine"
 
 export const INPUT_SIZE = 9
 export const HIDDEN_SIZE = 8
@@ -36,8 +36,7 @@ export function forward(genome: Genome, inputs: number[]): [number, number] {
 }
 
 /** Everything the agent gets to "see", normalised to roughly -1..1. */
-export function features(state: GameState): number[] {
-  const level = LEVELS[state.levelIndex]
+export function features(state: GameState, level: Level): number[] {
   const player = state.player
   const certificate = level.certificate
 
@@ -67,8 +66,8 @@ export function features(state: GameState): number[] {
   ]
 }
 
-export function actionFor(genome: Genome, state: GameState): Input {
-  const [horizontal, jump] = forward(genome, features(state))
+export function actionFor(genome: Genome, state: GameState, level: Level): Input {
+  const [horizontal, jump] = forward(genome, features(state, level))
   const jumpHeld = jump > 0
   return {
     left: horizontal < -0.2,

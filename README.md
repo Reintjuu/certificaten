@@ -31,7 +31,14 @@ npm run validate-levels   # snelle scripted smoke test
 npm run train-agent       # neuro-evolutie, schrijft agent/training-history.json
 ```
 
-Daarna `/agent/replay.html` openen (via `npm run dev`): daar zie je de fitness per generatie, welke generatie de beste was (★), en kun je elke generatie apart terugkijken. De opgeslagen gewichten *zijn* de opname — de engine is deterministisch, dus een genome speelt altijd exact dezelfde run.
+Daarna `/agent/replay.html` openen (via `npm run dev`). Daar zie je de fitness per generatie, welke generatie de beste was (★), en kun je kiezen tussen:
+
+- **Eén generatie** — die generatie speelt het level uit;
+- **Alle generaties tegelijk** — alle 30 lopen naast elkaar als gekleurde ghosts (blauw = vroegste, geel = laatste) met het pad dat ze aflegden, zodat je in één beeld ziet hoe het leren verliep.
+
+De opgeslagen gewichten *zijn* de opname — de engine is deterministisch, dus een genome speelt altijd exact dezelfde run.
+
+Trainen gebeurt volledig headless en zo snel als de CPU kan, niet op speelsnelheid: de laatste run simuleerde 3,45 miljoen frames (≈16 uur speeltijd op 60fps) in 4,7 seconden, ruwweg 12.000× realtime. De trainer print die cijfers zelf aan het eind.
 
 `validate-levels` is bewust een simpele scripted bot: een snelle kanarie, geen goede speler. Hij haalt level 1 en 2, maar struikelt over de langere klim in level 3 — dat is een beperking van zijn eigen regels, niet van het level. De echte controle of elk level haalbaar is, is de getrainde agent (`npm test` speelt de opgeslagen beste genome per level opnieuw af en eist dat die het certificaat haalt).
 

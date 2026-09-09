@@ -12,7 +12,7 @@ const history = JSON.parse(readFileSync(new URL("../agent/training-history.json"
 describe("policy network", () => {
   test("sees a fixed-size, finite view of the world", () => {
     for (const [index] of LEVELS.entries()) {
-      const values = features(createPlayingState(index))
+      const values = features(createPlayingState(index), LEVELS[index])
       assert.equal(values.length, INPUT_SIZE)
       assert.ok(values.every(Number.isFinite), `level ${index + 1} produced a non-finite feature`)
     }
@@ -21,7 +21,7 @@ describe("policy network", () => {
   test("copes with a level where every enemy is already gone", () => {
     const state = createPlayingState(0)
     state.enemies.forEach((enemy) => (enemy.alive = false))
-    const values = features(state)
+    const values = features(state, LEVELS[0])
     assert.equal(values.length, INPUT_SIZE)
     assert.ok(values.every(Number.isFinite))
   })
@@ -29,7 +29,7 @@ describe("policy network", () => {
   test("outputs stay within tanh's range", () => {
     const state = createPlayingState(0)
     for (let i = 0; i < 50; i++) {
-      for (const output of forward(randomGenome(), features(state))) {
+      for (const output of forward(randomGenome(), features(state, LEVELS[0]))) {
         assert.ok(output >= -1 && output <= 1, `output ${output} escaped the -1..1 range`)
       }
     }
@@ -54,7 +54,7 @@ describe("policy network", () => {
   test("never asks to walk left and right at the same time", () => {
     const state = createPlayingState(0)
     for (let i = 0; i < 200; i++) {
-      const action = actionFor(randomGenome(), state)
+      const action = actionFor(randomGenome(), state, LEVELS[0])
       assert.ok(!(action.left && action.right))
     }
   })
@@ -62,7 +62,7 @@ describe("policy network", () => {
   test("the same genome and state always give the same action", () => {
     const state = createPlayingState(1)
     const genome = randomGenome()
-    assert.deepEqual(actionFor(genome, state), actionFor(genome, state))
+    assert.deepEqual(actionFor(genome, state, LEVELS[1]), actionFor(genome, state, LEVELS[1]))
   })
 })
 

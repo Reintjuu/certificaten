@@ -32,9 +32,13 @@ export type LevelHistory = {
   bestGeneration: number
 }
 
+/** Total simulated frames, to report how much play time got compressed. */
+let simulatedFrames = 0
+
 export function evaluate(genome: Genome, levelIndex: number): { fitness: number; solved: boolean } {
   let state = createPlayingState(levelIndex)
-  const certificate = LEVELS[levelIndex].certificate
+  const level = LEVELS[levelIndex]
+  const certificate = level.certificate
   let closest = Infinity
   let solved = false
   let frame = 0
@@ -48,9 +52,10 @@ export function evaluate(genome: Genome, levelIndex: number): { fitness: number;
 
     const player = state.player
     closest = Math.min(closest, Math.hypot(certificate.x - player.x, certificate.y - player.y))
-    state = step(state, actionFor(genome, state))
+    state = step(state, actionFor(genome, state, level))
   }
 
+  simulatedFrames += frame
   return { fitness: -closest + (solved ? SOLVE_BONUS : 0) + frame * 0.02, solved }
 }
 
@@ -120,6 +125,7 @@ export function trainLevel(levelIndex: number, log = console.log): LevelHistory 
 }
 
 function main() {
+  const startedAt = Date.now()
   const levels: LevelHistory[] = []
   for (let levelIndex = 0; levelIndex < LEVELS.length; levelIndex++) {
     console.log(`\nTraining level ${levelIndex + 1}/${LEVELS.length}...`)
@@ -134,7 +140,18 @@ function main() {
 
   const outPath = new URL("./training-history.json", import.meta.url)
   writeFileSync(outPath, JSON.stringify({ levels }))
-  console.log(`\nWrote ${outPath.pathname}`)
+
+  // Training runs headless and as fast as the CPU allows: no canvas, no
+  // waiting on frames. Worth stating plainly, because at 60fps this many
+  // simulated frames would take most of a day to watch.
+  const seconds = (Date.now() - startedAt) / 1000
+  const realtimeHours = simulatedFrames / 60 / 3600
+  console.log(
+    `\nSimulated ${simulatedFrames.toLocaleString("en")} frames ` +
+      `(${realtimeHours.toFixed(1)}h of play at 60fps) in ${seconds.toFixed(1)}s ` +
+      `-- roughly ${Math.round(simulatedFrames / 60 / seconds).toLocaleString("en")}x realtime.`
+  )
+  console.log(`Wrote ${outPath.pathname}`)
 }
 
 const isMain = import.meta.url === `file://${process.argv[1]}`
