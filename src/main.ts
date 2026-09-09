@@ -7,80 +7,37 @@ import {
   createInitialState,
   step,
   type GameState,
-  type Input,
 } from "./engine";
 import { COLORS, drawScene, drawEntities, withCamera } from "./render";
 import { drawText, drawTextCentered, wrapText } from "./font";
+import { consumesKey, readInput } from "./input";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game")!;
 const ctx = canvas.getContext("2d")!;
 ctx.imageSmoothingEnabled = false;
 
-const JUMP_KEYS = new Set([" ", "w", "arrowup"]);
-const CONFIRM_KEYS = new Set([" ", "enter"]);
-const LEFT_KEYS = new Set(["arrowleft", "a"]);
-const RIGHT_KEYS = new Set(["arrowright", "d"]);
-const RESET_KEYS = new Set(["r"]);
-const DOWN_KEYS = new Set(["arrowdown", "s"]);
 const RESTART_PROMPT = "DRUK OP R: OPNIEUW";
-// The NES B button: hold to run instead of walk.
-const RUN_KEYS = new Set(["shift", "x"]);
-
-// Only the keys that would otherwise scroll the page. Swallowing every
-// keydown also swallowed F5, Ctrl+R and Tab, so the page couldn't be
-// refreshed while it had focus.
-const SCROLL_KEYS = new Set([" ", "arrowup", "arrowdown", "arrowleft", "arrowright"]);
 
 const keys = new Set<string>();
 let prevKeys = new Set<string>();
 
-addEventListener("keydown", (e) => {
-  if (e.ctrlKey || e.metaKey || e.altKey) {
+addEventListener("keydown", (event) => {
+  // Leave shortcuts alone: Ctrl+R must still reload the page.
+  if (event.ctrlKey || event.metaKey || event.altKey) {
     return;
   }
-  const key = e.key.toLowerCase();
-  if (SCROLL_KEYS.has(key)) {
-    e.preventDefault();
+  const key = event.key.toLowerCase();
+  if (consumesKey(key)) {
+    event.preventDefault();
   }
   keys.add(key);
 });
-addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+addEventListener("keyup", (event) => keys.delete(event.key.toLowerCase()));
 // Without this, alt-tabbing away mid-run leaves the key "held" forever and
 // the player keeps walking after you come back.
 addEventListener("blur", () => {
   keys.clear();
 });
-
-function anyPressed(current: Set<string>, previous: Set<string>, mapped: Set<string>): boolean {
-  for (const k of mapped) {
-    if (current.has(k) && !previous.has(k)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function anyHeld(current: Set<string>, mapped: Set<string>): boolean {
-  for (const k of mapped) {
-    if (current.has(k)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function readInput(): Input {
-  return {
-    left: anyHeld(keys, LEFT_KEYS),
-    right: anyHeld(keys, RIGHT_KEYS),
-    jumpHeld: anyHeld(keys, JUMP_KEYS),
-    run: anyHeld(keys, RUN_KEYS),
-    down: anyHeld(keys, DOWN_KEYS),
-    jumpPressed: anyPressed(keys, prevKeys, JUMP_KEYS),
-    confirmPressed: anyPressed(keys, prevKeys, CONFIRM_KEYS),
-    resetPressed: anyPressed(keys, prevKeys, RESET_KEYS),
-  };
-}
 
 let state: GameState = createInitialState();
 
@@ -188,7 +145,7 @@ function draw(state: GameState): void {
 }
 
 function loop(): void {
-  const input = readInput();
+  const input = readInput(keys, prevKeys);
   state = step(state, input);
   draw(state);
   prevKeys = new Set(keys);

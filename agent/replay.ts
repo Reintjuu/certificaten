@@ -307,7 +307,17 @@ function toMenu(): void {
   statusEl.textContent = "Kies met de pijltjes en Enter, of klik.";
 }
 
+const CONSOLE_KEYS = new Set([...MENU_UP_KEYS, ...MENU_DOWN_KEYS, ...MENU_SELECT_KEYS, ...MENU_BACK_KEYS]);
+
 addEventListener("keydown", (event) => {
+  // Same rule as the game: swallow only the keys this page acts on, so the
+  // browser's own shortcuts and Firefox's type-ahead find stay out of the way.
+  if (event.ctrlKey || event.metaKey || event.altKey) {
+    return;
+  }
+  if (CONSOLE_KEYS.has(event.key)) {
+    event.preventDefault();
+  }
   if (MENU_BACK_KEYS.has(event.key)) {
     toMenu();
     return;
@@ -321,10 +331,7 @@ addEventListener("keydown", (event) => {
     menu.moveBy(1);
   } else if (MENU_SELECT_KEYS.has(event.key)) {
     menu.activate();
-  } else {
-    return;
   }
-  event.preventDefault();
 });
 
 /** Mouse position in the canvas's own 480x270 coordinates. */
