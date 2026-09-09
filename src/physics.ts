@@ -8,20 +8,59 @@ import type { EnemyDef, Level } from "./levels"
 export const CANVAS_W = 480
 export const CANVAS_H = 270
 
-// Constants adapted from the SMB1 disassembly's documented ratios (see
-// README): weak gravity while rising with jump held, ~3x stronger while
-// falling; acceleration/friction instead of instant-snap movement; jump
-// height depends on how long the jump key is held.
+// Constants taken from the Super Mario Bros. disassembly (smbdis.asm), with
+// the raw ROM values kept alongside so they can be checked against the source.
+//
+// Units, as derived from the movement routines:
+//  - MoveObjectHorizontally shifts X_Speed's low nybble into the fraction, so
+//    one X_Speed unit is 1/16 of a pixel per frame.
+//  - ImposeGravity adds Y_Speed straight to Y_Position, so Y_Speed is whole
+//    pixels per frame, and the "force" bytes are 1/256 of a pixel per frame^2.
+//  - The horizontal adder accumulates into a 1/256 subspeed before carrying
+//    into X_Speed, so an adder of N means N/(256*16) pixels per frame^2.
+const SUBPIXEL = 1 / 16 // one X_Speed unit
+const SUBFORCE = 1 / 256 // one vertical force unit
+const HORIZONTAL_ADDER = 1 / (256 * 16)
+
 export const PHYSICS = {
-  accel: 0.5,
-  friction: 0.6,
-  maxSpeed: 2.4,
-  gravityRise: 0.22,
-  gravityFall: 0.6,
-  jumpVelocity: -6.6,
-  jumpVelocityFast: -7.2,
-  jumpCutVy: -2.2,
-  bounceVelocity: -4.2,
+  /** MaxRightXSpdData: $18 walking, $28 running. */
+  maxWalkSpeed: 0x18 * SUBPIXEL,
+  maxRunSpeed: 0x28 * SUBPIXEL,
+  /** FrictionData $e4/$98/$d0. The same adder accelerates and decelerates. */
+  accelRunning: 0xe4 * HORIZONTAL_ADDER,
+  accelWalking: 0x98 * HORIZONTAL_ADDER,
+  accelFastNotRunning: 0xd0 * HORIZONTAL_ADDER,
+  /** Above $21 the game switches to the third friction value. */
+  fastSpeedThreshold: 0x21 * SUBPIXEL,
+  /**
+   * In the air X_Physics ignores the button entirely and only asks whether
+   * you're already going at least $19 -- that is the whole difference between
+   * steering on the ground and steering mid-jump.
+   */
+  airRunningSpeedThreshold: 0x19 * SUBPIXEL,
+  /** Turning around doubles the adder (asl FrictionAdderLow). */
+  skidMultiplier: 2,
+  /** SetRTmr: holding B while moving sets RunningTimer to $0a frames. */
+  runningTimerFrames: 0x0a,
+
+  /** Jump tables, indexed by horizontal speed at take-off. */
+  jumpSpeedThresholds: [0x09, 0x10, 0x19, 0x1c].map((v) => v * SUBPIXEL),
+  /** PlayerYSpdData: faster run-ups launch harder. */
+  jumpVelocity: [0xfc, 0xfc, 0xfc, 0xfb, 0xfb].map((v) => v - 0x100),
+  /** JumpMForceData: gravity while rising with the button held. */
+  gravityRising: [0x20, 0x20, 0x1e, 0x28, 0x28].map((v) => v * SUBFORCE),
+  /** FallMForceData: gravity while falling, or after letting go. */
+  gravityFalling: [0x70, 0x70, 0x60, 0x90, 0x90].map((v) => v * SUBFORCE),
+  /** MovePlayerVertically caps the fall at $04. */
+  maxFallSpeed: 0x04,
+  /** DiffToHaltJump: letting go within the first pixel doesn't cut the jump. */
+  jumpCutGracePixels: 1,
+
+  /** EnemyStomped: a flat $fd, with no dependence on holding the button. */
+  bounceVelocity: 0xfd - 0x100,
+
+  // Ours, not the ROM's: this game has no scrolling camera or score, so these
+  // have no original to be faithful to.
   squashDuration: 20,
   walkFrameDistance: 14,
   deathFallMargin: 60,
@@ -44,6 +83,12 @@ export type Player = {
   facing: 1 | -1
   animTimer: number
   animFrame: 0 | 1
+  /** RunningTimer: keeps run status for a few frames after letting go of B. */
+  runningTimer: number
+  /** Which row of the jump tables this jump took off with. */
+  jumpIndex: number
+  /** JumpOrigin_Y_Position: where the current jump started, for the cut grace. */
+  jumpOriginY: number
 }
 
 export type Enemy = {
@@ -63,6 +108,8 @@ export type Input = {
   right: boolean
   jumpHeld: boolean
   jumpPressed: boolean
+  /** The B button: run rather than walk. */
+  run: boolean
   confirmPressed: boolean
   resetPressed: boolean
 }
@@ -72,6 +119,7 @@ export const NO_INPUT: Input = {
   right: false,
   jumpHeld: false,
   jumpPressed: false,
+  run: false,
   confirmPressed: false,
   resetPressed: false,
 }
@@ -99,6 +147,9 @@ export function createPlayer(start: { x: number; y: number }): Player {
     facing: 1,
     animTimer: 0,
     animFrame: 0,
+    runningTimer: 0,
+    jumpIndex: 0,
+    jumpOriginY: start.y,
   }
 }
 
@@ -116,40 +167,81 @@ export function createEnemies(definitions: EnemyDef[]): Enemy[] {
   }))
 }
 
-/** Accelerates or brakes, and reports which way the player is being pushed. */
+/**
+ * Ports SMB1's ImposeFriction/GetXPhy: one adder both accelerates and brakes,
+ * chosen from whether you're running, and doubled when you push against the
+ * way you're already moving (the skid).
+ */
 export function applyHorizontalInput(p: Player, input: Input): Direction {
   const dir: Direction = input.right && !input.left ? 1 : input.left && !input.right ? -1 : 0
+  // Player_MovingDir keeps the last direction travelled when standing still,
+  // which is what lets you break into a run from a standstill.
+  const movingDir: Direction = p.vx !== 0 ? (Math.sign(p.vx) as Direction) : p.facing
+  const pushingAlong = dir !== 0 && dir === movingDir
+
+  if (input.run && p.grounded && pushingAlong) {
+    p.runningTimer = PHYSICS.runningTimerFrames
+  } else if (p.runningTimer > 0) {
+    p.runningTimer--
+  }
+
+  const running = p.grounded
+    ? pushingAlong && (input.run || p.runningTimer > 0)
+    : Math.abs(p.vx) >= PHYSICS.airRunningSpeedThreshold
+  const maxSpeed = running ? PHYSICS.maxRunSpeed : PHYSICS.maxWalkSpeed
+
+  let adder = running
+    ? PHYSICS.accelRunning
+    : Math.abs(p.vx) >= PHYSICS.fastSpeedThreshold
+      ? PHYSICS.accelFastNotRunning
+      : PHYSICS.accelWalking
+  if (dir !== 0 && movingDir !== 0 && dir !== movingDir) adder *= PHYSICS.skidMultiplier
+
   if (dir !== 0) {
-    p.vx = clamp(p.vx + dir * PHYSICS.accel, -PHYSICS.maxSpeed, PHYSICS.maxSpeed)
+    p.vx = clamp(p.vx + dir * adder, -maxSpeed, maxSpeed)
     p.facing = dir
     return dir
   }
+
   if (p.vx !== 0) {
     const sign = Math.sign(p.vx)
-    const braked = p.vx - sign * PHYSICS.friction
-    p.vx = Math.sign(braked) === sign ? braked : 0
+    const braked = p.vx - sign * adder
+    p.vx = Math.sign(braked) === sign ? clamp(braked, -maxSpeed, maxSpeed) : 0
   }
   return 0
 }
 
-export function applyJump(p: Player, input: Input) {
-  // Jumping requires actually standing on something. The original prototype
-  // used "|vy| < 0.1", which is also true at a jump's apex -- that was the
-  // infinite-jump bug.
-  if (input.jumpPressed && p.grounded) {
-    const fast = Math.abs(p.vx) >= PHYSICS.maxSpeed * 0.9
-    p.vy = fast ? PHYSICS.jumpVelocityFast : PHYSICS.jumpVelocity
-    p.grounded = false
+/** Which row of the jump tables a take-off at this speed uses. */
+export function jumpIndexFor(speed: number): number {
+  let index = 0
+  while (index < PHYSICS.jumpSpeedThresholds.length && speed >= PHYSICS.jumpSpeedThresholds[index]) {
+    index++
   }
-  // Releasing the button while still rising cuts the jump short.
-  if (p.vy < 0 && !input.jumpHeld) {
-    p.vy = Math.max(p.vy, PHYSICS.jumpCutVy)
-  }
+  return index
 }
 
+export function applyJump(p: Player, input: Input) {
+  // Jumping requires actually standing on something (SMB1 gates this on
+  // Player_State == 0). There is deliberately no coyote time: the original
+  // has none, and adding it would be the one obviously un-NES thing here.
+  if (!input.jumpPressed || !p.grounded) return
+  p.jumpIndex = jumpIndexFor(Math.abs(p.vx))
+  p.vy = PHYSICS.jumpVelocity[p.jumpIndex]
+  p.jumpOriginY = p.y
+  p.grounded = false
+}
+
+/**
+ * SMB1 varies jump height by *switching gravity*, not by cutting the upward
+ * speed: let go of the button and JumpSwimSub swaps the gentle rising force
+ * for the much heavier falling one. Letting go within the first pixel of the
+ * jump doesn't count (DiffToHaltJump).
+ */
 export function applyGravity(p: Player, input: Input) {
-  const rising = p.vy < 0 && input.jumpHeld
-  p.vy += rising ? PHYSICS.gravityRise : PHYSICS.gravityFall
+  const risenFar = p.jumpOriginY - p.y >= PHYSICS.jumpCutGracePixels
+  const stillBeingLifted = p.vy < 0 && (input.jumpHeld || !risenFar)
+  p.vy += stillBeingLifted ? PHYSICS.gravityRising[p.jumpIndex] : PHYSICS.gravityFalling[p.jumpIndex]
+  if (p.vy > PHYSICS.maxFallSpeed) p.vy = PHYSICS.maxFallSpeed
 }
 
 /** Lands the player on any platform whose surface it crossed this frame. */

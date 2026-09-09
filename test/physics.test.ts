@@ -7,6 +7,7 @@ import {
   applyHorizontalInput,
   applyJump,
   clamp,
+  jumpIndexFor,
   createPlayer,
   moveEnemies,
   overlaps,
@@ -76,14 +77,44 @@ describe("applyHorizontalInput", () => {
   test("accelerates and reports the direction", () => {
     const p = player()
     assert.equal(applyHorizontalInput(p, input({ right: true })), 1)
-    assert.equal(p.vx, PHYSICS.accel)
+    assert.equal(p.vx, PHYSICS.accelWalking, "walking pace without the run button")
     assert.equal(p.facing, 1)
   })
 
-  test("never exceeds the top speed", () => {
-    const p = player({ vx: PHYSICS.maxSpeed })
+  test("walking is capped lower than running", () => {
+    const walking = player({ vx: PHYSICS.maxWalkSpeed, facing: 1, grounded: true })
+    applyHorizontalInput(walking, input({ right: true }))
+    assert.equal(walking.vx, PHYSICS.maxWalkSpeed)
+
+    const running = player({ vx: PHYSICS.maxWalkSpeed, facing: 1, grounded: true })
+    applyHorizontalInput(running, input({ right: true, run: true }))
+    assert.ok(running.vx > PHYSICS.maxWalkSpeed, "holding run lifts the cap")
+    assert.ok(running.vx <= PHYSICS.maxRunSpeed)
+  })
+
+  test("run status lingers for a few frames after letting go of the button", () => {
+    // SetRTmr: RunningTimer is set to 10 and counts down, so tapping the
+    // button doesn't drop you straight back to walking pace.
+    const p = player({ vx: PHYSICS.maxWalkSpeed, facing: 1, grounded: true })
+    applyHorizontalInput(p, input({ right: true, run: true }))
+    assert.equal(p.runningTimer, PHYSICS.runningTimerFrames)
+
     applyHorizontalInput(p, input({ right: true }))
-    assert.equal(p.vx, PHYSICS.maxSpeed)
+    assert.equal(p.runningTimer, PHYSICS.runningTimerFrames - 1)
+    assert.ok(p.vx > PHYSICS.maxWalkSpeed, "still allowed to run while the timer lasts")
+  })
+
+  test("turning around brakes twice as hard as walking does", () => {
+    const skidding = player({ vx: 1, facing: 1, grounded: true })
+    applyHorizontalInput(skidding, input({ left: true }))
+    const skidDelta = 1 - skidding.vx
+
+    const starting = player({ vx: 0, facing: -1, grounded: true })
+    applyHorizontalInput(starting, input({ left: true }))
+    assert.ok(
+      skidDelta > Math.abs(starting.vx) * 1.9,
+      `skid should apply about double the adder (skid ${skidDelta}, plain ${Math.abs(starting.vx)})`
+    )
   })
 
   test("pressing both directions cancels out", () => {
@@ -93,7 +124,7 @@ describe("applyHorizontalInput", () => {
   })
 
   test("friction lands exactly on zero instead of overshooting into reverse", () => {
-    const p = player({ vx: PHYSICS.friction / 2 })
+    const p = player({ vx: PHYSICS.accelWalking / 2 })
     applyHorizontalInput(p, input())
     assert.equal(p.vx, 0)
   })
@@ -113,44 +144,62 @@ describe("applyJump", () => {
 
     const grounded = player({ grounded: true })
     applyJump(grounded, input({ jumpPressed: true, jumpHeld: true }))
-    assert.equal(grounded.vy, PHYSICS.jumpVelocity)
+    assert.equal(grounded.vy, PHYSICS.jumpVelocity[0])
     assert.equal(grounded.grounded, false)
   })
 
-  test("running at speed gives the stronger jump", () => {
-    const p = player({ grounded: true, vx: PHYSICS.maxSpeed })
-    applyJump(p, input({ jumpPressed: true, jumpHeld: true }))
-    assert.equal(p.vy, PHYSICS.jumpVelocityFast)
+  test("the take-off speed picks the jump table row", () => {
+    for (const [speed, expected] of [[0, 0], [0.6, 1], [1.1, 2], [1.6, 3], [2.5, 4]] as const) {
+      assert.equal(jumpIndexFor(speed), expected, `speed ${speed}`)
+    }
   })
 
-  test("letting go while rising cuts the jump short", () => {
-    const p = player({ vy: PHYSICS.jumpVelocity })
-    applyJump(p, input({ jumpHeld: false }))
-    assert.equal(p.vy, PHYSICS.jumpCutVy)
-  })
+  test("a faster run-up launches harder", () => {
+    const standing = player({ grounded: true, vx: 0 })
+    applyJump(standing, input({ jumpPressed: true, jumpHeld: true }))
 
-  test("letting go while falling changes nothing", () => {
-    const p = player({ vy: 4 })
-    applyJump(p, input({ jumpHeld: false }))
-    assert.equal(p.vy, 4)
+    const sprinting = player({ grounded: true, vx: PHYSICS.maxRunSpeed })
+    applyJump(sprinting, input({ jumpPressed: true, jumpHeld: true }))
+
+    assert.ok(sprinting.vy < standing.vy, "the fast row launches with more upward speed")
   })
 })
 
 describe("applyGravity", () => {
   test("pulls gently while rising with the button held", () => {
-    const p = player({ vy: -5 })
+    const p = player({ vy: -4, jumpOriginY: 100, y: 80 })
     applyGravity(p, input({ jumpHeld: true }))
-    assert.equal(p.vy, -5 + PHYSICS.gravityRise)
+    assert.equal(p.vy, -4 + PHYSICS.gravityRising[0])
   })
 
   test("pulls hard while falling", () => {
     const p = player({ vy: 1 })
     applyGravity(p, input({ jumpHeld: true }))
-    assert.equal(p.vy, 1 + PHYSICS.gravityFall)
+    assert.equal(p.vy, 1 + PHYSICS.gravityFalling[0])
+  })
+
+  test("letting go mid-rise swaps in the heavy falling gravity", () => {
+    // SMB1 varies jump height this way rather than by cutting upward speed.
+    const p = player({ vy: -4, jumpOriginY: 100, y: 80 })
+    applyGravity(p, input({ jumpHeld: false }))
+    assert.equal(p.vy, -4 + PHYSICS.gravityFalling[0])
+  })
+
+  test("letting go within the first pixel does not cut the jump", () => {
+    // DiffToHaltJump is 1, so a jump can't be cancelled the instant it starts.
+    const p = player({ vy: -4, jumpOriginY: 100, y: 99.5 })
+    applyGravity(p, input({ jumpHeld: false }))
+    assert.equal(p.vy, -4 + PHYSICS.gravityRising[0])
   })
 
   test("falling is meaningfully heavier than rising", () => {
-    assert.ok(PHYSICS.gravityFall > PHYSICS.gravityRise * 2)
+    assert.ok(PHYSICS.gravityFalling[0] > PHYSICS.gravityRising[0] * 2)
+  })
+
+  test("the fall speed is capped", () => {
+    const p = player({ vy: PHYSICS.maxFallSpeed })
+    applyGravity(p, input())
+    assert.equal(p.vy, PHYSICS.maxFallSpeed)
   })
 })
 
@@ -181,7 +230,7 @@ describe("resolvePlatformCollisions", () => {
 
 describe("updateAnimation", () => {
   test("flips the walk frame once enough ground is covered", () => {
-    const p = player({ grounded: true, vx: PHYSICS.maxSpeed, animTimer: PHYSICS.walkFrameDistance })
+    const p = player({ grounded: true, vx: PHYSICS.maxRunSpeed, animTimer: PHYSICS.walkFrameDistance })
     updateAnimation(p, 1)
     assert.equal(p.animFrame, 1)
     assert.equal(p.animTimer, 0)

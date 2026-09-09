@@ -1,4 +1,4 @@
-import { CANVAS_W, CANVAS_H, LEVELS, assertNever, createInitialState, step, type GameState, type Input } from "./engine"
+import { BLINK_PERIOD_FRAMES, CANVAS_W, CANVAS_H, LEVELS, assertNever, createInitialState, step, type GameState, type Input } from "./engine"
 import { COLORS, drawScene, drawEntities } from "./render"
 import { drawText, drawTextCentered, wrapText } from "./font"
 
@@ -11,6 +11,8 @@ const CONFIRM_KEYS = new Set([" ", "enter"])
 const LEFT_KEYS = new Set(["arrowleft", "a"])
 const RIGHT_KEYS = new Set(["arrowright", "d"])
 const RESET_KEYS = new Set(["r"])
+// The NES B button: hold to run instead of walk.
+const RUN_KEYS = new Set(["shift", "x"])
 
 // Only the keys that would otherwise scroll the page. Swallowing every
 // keydown also swallowed F5, Ctrl+R and Tab, so the page couldn't be
@@ -48,6 +50,7 @@ function readInput(): Input {
     left: anyHeld(keys, LEFT_KEYS),
     right: anyHeld(keys, RIGHT_KEYS),
     jumpHeld: anyHeld(keys, JUMP_KEYS),
+    run: anyHeld(keys, RUN_KEYS),
     jumpPressed: anyPressed(keys, prevKeys, JUMP_KEYS),
     confirmPressed: anyPressed(keys, prevKeys, CONFIRM_KEYS),
     resetPressed: anyPressed(keys, prevKeys, RESET_KEYS),
@@ -82,7 +85,7 @@ function drawDialogueBox(state: GameState) {
     drawText(ctx, row, boxX + padding, boxY + padding + i * lineHeight, scale, "#ffffff")
   })
 
-  if (state.blinkTimer < 30) {
+  if (state.blinkTimer < BLINK_PERIOD_FRAMES / 2) {
     drawText(ctx, "▼", boxX + boxW - 24, boxY + boxH - 22, 1, "#ffffff")
   }
 }
@@ -94,7 +97,7 @@ function drawTitleScreen(state: GameState) {
   drawTextCentered(ctx, "QUEESTE NAAR DE", CANVAS_W / 2, 60, 1, "#ffffff")
   drawTextCentered(ctx, "CERTIFICATEN", CANVAS_W / 2, 84, 1, COLORS.highlight)
 
-  if (state.blinkTimer < 30) {
+  if (state.blinkTimer < BLINK_PERIOD_FRAMES / 2) {
     drawTextCentered(ctx, "PRESS START", CANVAS_W / 2, 170, 1, "#ffffff")
   }
 }

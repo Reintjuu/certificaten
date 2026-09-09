@@ -10,7 +10,26 @@ npm run dev      # spel op /
 npm test         # unit tests
 ```
 
-Besturing: pijltjes/A-D bewegen, spatie/W springen (kort tikken = lage hop, ingedrukt houden = volle sprong), R reset het huidige level.
+Besturing: pijltjes/A-D bewegen, **Shift rennen**, spatie/W springen (kort tikken = lage hop, ingedrukt houden = volle sprong), R reset het huidige level.
+
+## Physics
+
+De bewegingsregels komen uit de Super Mario Bros.-disassembly (`smbdis.asm`), niet uit een gevoelsmatige benadering. `src/physics.ts` zet de ruwe ROM-waarden er als hexgetal bij, zodat ze na te trekken zijn:
+
+| | ROM | omgerekend |
+| --- | --- | --- |
+| Max. loop-/rensnelheid | `$18` / `$28` | 1,5 / 2,5 px per frame |
+| Versnelling lopen / rennen | `$98` / `$e4` | 0,037 / 0,056 px per frame² |
+| Omdraaien (skid) | adder ×2 | remt dubbel zo hard |
+| Ren-timer na loslaten B | `$0a` | 10 frames |
+| Sprongsnelheid (5 rijen) | `$fc…$fb` | −4 tot −5 px per frame |
+| Zwaartekracht stijgen / vallen | `$20…$28` / `$60…$90` | 0,117–0,156 / 0,375–0,563 |
+| Max. valsnelheid | `$04` | 4 px per frame |
+| Terugstuiter na pletten | `$fd` | −3 px per frame |
+
+Twee details die vaak verkeerd worden nagemaakt: SMB1 varieert de spronghoogte door bij het loslaten van de knop naar de *zware valzwaartekracht* om te schakelen (niet door de opwaartse snelheid af te kappen), en de sprongboog wordt gekozen uit een tabel van vijf rijen op basis van je snelheid bij het afzetten — hard rennen springt hoger én strakker.
+
+**Coyote time zit er bewust niet in.** Het origineel heeft het niet: springen vereist `Player_State == 0`. Dat toevoegen zou de besturing moderner maken, maar aantoonbaar on-NES.
 
 ## Structuur
 
@@ -42,7 +61,7 @@ De opgeslagen gewichten *zijn* de opname — de engine is deterministisch, dus e
 
 Trainen gebeurt volledig headless en zo snel als de CPU kan, niet op speelsnelheid: de laatste run simuleerde 3,45 miljoen frames (≈16 uur speeltijd op 60fps) in 4,7 seconden, ruwweg 12.000× realtime. De trainer print die cijfers zelf aan het eind.
 
-`validate-levels` is bewust een simpele scripted bot: een snelle kanarie, geen goede speler. Hij haalt level 1 en 2, maar struikelt over de langere klim in level 3 — dat is een beperking van zijn eigen regels, niet van het level. De echte controle of elk level haalbaar is, is de getrainde agent (`npm test` speelt de opgeslagen beste genome per level opnieuw af en eist dat die het certificaat haalt).
+`validate-levels` is een snelle kanarie: hij simuleert per beurt zijn mogelijke sprongen tegen de echte engine en kiest de beste, in plaats van sprongafstanden uit vaste constanten te gokken. Daardoor blijft hij kloppen als de physics veranderen — de vorige, handmatig afgestelde versie werd waardeloos zodra de getallen verschoven. Draait in een halve seconde. De uitgebreidere controle is de getrainde agent (`npm test` speelt de opgeslagen beste genome per level opnieuw af en eist dat die het certificaat haalt).
 
 ## Een level of sprite aanpassen
 

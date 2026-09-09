@@ -16,6 +16,11 @@ const TOURNAMENT_SIZE = 4
 const MUTATION_RATE = 0.12
 const MUTATION_SCALE = 0.6
 const SOLVE_BONUS = 2000
+/** Small reward per frame survived, to favour living over dying early. */
+const SURVIVAL_BONUS_PER_FRAME = 0.02
+const FPS = 60
+const SECONDS_PER_HOUR = 3600
+const MS_PER_SECOND = 1000
 
 export type GenerationRecord = {
   generation: number
@@ -55,7 +60,7 @@ export function evaluate(genome: Genome, levelIndex: number): { fitness: number;
   }
 
   simulatedFrames += frame
-  return { fitness: -closest + (solved ? SOLVE_BONUS : 0) + frame * 0.02, solved }
+  return { fitness: -closest + (solved ? SOLVE_BONUS : 0) + frame * SURVIVAL_BONUS_PER_FRAME, solved }
 }
 
 function mutate(genome: Genome): Genome {
@@ -143,12 +148,12 @@ function main() {
   // Training runs headless and as fast as the CPU allows: no canvas, no
   // waiting on frames. Worth stating plainly, because at 60fps this many
   // simulated frames would take most of a day to watch.
-  const seconds = (Date.now() - startedAt) / 1000
-  const realtimeHours = simulatedFrames / 60 / 3600
+  const seconds = (Date.now() - startedAt) / MS_PER_SECOND
+  const realtimeHours = simulatedFrames / FPS / SECONDS_PER_HOUR
   console.log(
     `\nSimulated ${simulatedFrames.toLocaleString("en")} frames ` +
       `(${realtimeHours.toFixed(1)}h of play at 60fps) in ${seconds.toFixed(1)}s ` +
-      `-- roughly ${Math.round(simulatedFrames / 60 / seconds).toLocaleString("en")}x realtime.`
+      `-- roughly ${Math.round(simulatedFrames / FPS / seconds).toLocaleString("en")}x realtime.`
   )
   console.log(`Wrote ${outPath.pathname}`)
 }

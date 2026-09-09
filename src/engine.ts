@@ -11,6 +11,9 @@ export type { Level }
 export { CANVAS_W, CANVAS_H, PHYSICS, NO_INPUT } from "./physics"
 export type { Player, Enemy, Input, Direction } from "./physics"
 
+/** The blink cycle for "PRESS START" and the dialogue arrow. */
+export const BLINK_PERIOD_FRAMES = 60
+
 type GamePhase = "title" | "dialogue" | "playing" | "dead" | "gameComplete"
 type DialogueKind = "intro" | "outro"
 
@@ -97,7 +100,7 @@ export function step(state: GameState, input: Input, levels: Level[] = LEVELS): 
     player: { ...state.player },
     enemies: state.enemies.map((enemy) => ({ ...enemy })),
   }
-  next.blinkTimer = (state.blinkTimer + 1) % 60
+  next.blinkTimer = (state.blinkTimer + 1) % BLINK_PERIOD_FRAMES
 
   switch (next.phase) {
     case "title":

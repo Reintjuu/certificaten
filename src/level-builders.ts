@@ -7,10 +7,13 @@ export const PLAYER_SIZE = { w: 16, h: 24 } as const
 export const ENEMY_SIZE = { w: 16, h: 16 } as const
 export const CERTIFICATE_SIZE = { w: 18, h: 24 } as const
 
+/** Platforms are all drawn this thick unless a level says otherwise. */
+const DEFAULT_PLATFORM_THICKNESS = 12
+
 /** How far the certificate floats above the platform it belongs to. */
 const CERTIFICATE_HOVER = 13
 
-export function platform(x: number, y: number, w: number, h = 12): Platform {
+export function platform(x: number, y: number, w: number, h = DEFAULT_PLATFORM_THICKNESS): Platform {
   return { x, y, w, h }
 }
 
