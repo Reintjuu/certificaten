@@ -6,10 +6,37 @@ import { textWidth, wrapText } from "../src/font"
 import { LEVELS } from "../src/levels"
 
 const GLYPH_SIZE = 16
-const DRAWN_TEXT_SOURCES = ["src/main.ts", "agent/replay.ts"]
+const DRAWN_TEXT_SOURCES = ["src/main.ts", "src/menu.ts", "agent/replay.ts"]
 
 function missingGlyphs(text: string) {
   return [...new Set(text.toUpperCase())].filter((ch) => !(ch in GLYPHS))
+}
+
+/** Splits a call's argument list on the commas that separate arguments. */
+function splitArguments(source: string) {
+  const args: string[] = []
+  let depth = 0
+  let quote: string | null = null
+  let current = ""
+
+  for (const char of source) {
+    if (quote) {
+      if (char === quote) quote = null
+    } else if (char === '"' || char === "'" || char === "`") {
+      quote = char
+    } else if ("([{".includes(char)) {
+      depth++
+    } else if (")]}".includes(char)) {
+      depth--
+    } else if (char === "," && depth === 0) {
+      args.push(current.trim())
+      current = ""
+      continue
+    }
+    current += char
+  }
+  args.push(current.trim())
+  return args
 }
 
 /** Every `drawText`/`drawTextCentered` call, with its literal text and scale. */
@@ -19,11 +46,11 @@ function drawTextCalls(file: string) {
     [...source.matchAll(/const\s+(\w+)\s*=\s*([\d.]+)\s*$/gm)].map(({ 1: name, 2: value }) => [name, Number(value)])
   )
 
-  const calls = [...source.matchAll(/drawText(?:Centered)?\(\s*ctx\s*,\s*(.+)\)\s*$/gm)]
-  return calls.map(({ 1: args }) => {
-    const literal = args.match(/^(?:"([^"]*)"|`([^`]*)`)/)
-    const scaleToken = args.match(/,\s*([\w.]+)\s*,\s*(?:"[^"]*"|[\w.]+)\s*\)?$/)?.[1]
-    const scale = scaleToken === undefined ? null : (numericConstants.get(scaleToken) ?? Number(scaleToken))
+  return [...source.matchAll(/drawText(?:Centered)?\(\s*ctx\s*,\s*(.+)\)\s*$/gm)].map(({ 1: rest }) => {
+    // drawText(ctx, text, x, y, scale, colour)
+    const [text = "", , , scaleToken = ""] = splitArguments(rest)
+    const literal = text.match(/^(?:"([^"]*)"|`([^`]*)`)$/)
+    const scale = numericConstants.get(scaleToken) ?? Number(scaleToken)
     return {
       file,
       // Template placeholders are runtime values; the surrounding literal text

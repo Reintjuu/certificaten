@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { LEVELS, createPlayingState } from "../src/engine"
 import { GENOME_SIZE, INPUT_SIZE, actionFor, features, forward, randomGenome, type Genome } from "../agent/policy"
-import { evaluate, type LevelHistory } from "../agent/train"
+import { evaluate, type LevelHistory } from "../agent/evolution"
 
 const history = JSON.parse(readFileSync(new URL("../agent/training-history.json", import.meta.url), "utf8")) as {
   levels: LevelHistory[]

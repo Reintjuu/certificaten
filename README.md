@@ -56,10 +56,15 @@ npm run validate-levels   # snelle scripted smoke test
 npm run train-agent       # neuro-evolutie, schrijft agent/training-history.json
 ```
 
-Daarna `/agent/replay.html` openen (via `npm run dev`). Daar zie je de fitness per generatie, welke generatie de beste was (★), en kun je kiezen tussen:
+Beide zijn ook zonder terminal te doen: open `/agent/replay.html` — de **AI-console**. Een NES-menu met pijltjes en Enter (of gewoon klikken):
 
-- **Eén generatie** — die generatie speelt het level uit;
-- **Alle generaties tegelijk** — alle 30 lopen naast elkaar als gekleurde ghosts (blauw = vroegste, geel = laatste) met het pad dat ze aflegden, zodat je in één beeld ziet hoe het leren verliep.
+- **Bekijk beste run** — de beste generatie speelt het level uit;
+- **Alle generaties** — alle 60 lopen naast elkaar als gekleurde ghosts (blauw = vroegste, geel = laatste) met hun afgelegde pad, zodat je in één beeld ziet hoe het leren verliep;
+- **Train opnieuw** — draait de hele evolutie in de browser, één generatie per frame zodat de pagina niet bevriest, met een live grafiek;
+- **Download data** — het resultaat als JSON, om in de repo te committen;
+- **Speel zelf** — terug naar het spel.
+
+Escape brengt je altijd terug naar het menu.
 
 De opgeslagen gewichten *zijn* de opname — de engine is deterministisch, dus een genome speelt altijd exact dezelfde run.
 

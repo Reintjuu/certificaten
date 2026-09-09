@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Agent replay</title>
+  <title>AI console</title>
   <style>
     html, body { margin: 0; min-height: 100%; background: #111; color: #ddd; font-family: monospace; }
     .wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px; }
@@ -19,11 +19,9 @@
 </head>
 <body>
   <div class="wrap">
-    <div id="levels"></div>
-    <div id="modes"></div>
     <canvas id="game" width="480" height="270"></canvas>
     <div id="status"></div>
-    <h2>Fitness per generatie — klik een generatie om die te bekijken (★ = beste)</h2>
+    <h2>Fitness per generatie (★ = beste). Escape brengt je terug naar het menu.</h2>
     <canvas id="chart" width="960" height="180"></canvas>
     <div id="generations"></div>
   </div>

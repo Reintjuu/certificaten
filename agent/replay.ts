@@ -1,12 +1,13 @@
-// Standalone viewer for a training run: replays stored genomes through the
-// real, deterministic engine and draws them with the game's own renderer --
-// without touching src/main.ts's game-state-machine. Dev only: open via
-// `npm run dev` at /agent/replay.html.
+// The AI console: pick what to do from a menu instead of running npm scripts.
+// It replays recorded runs, trains fresh ones in the browser, and hands the
+// result back as a file. Open it at /agent/replay.html.
 //
-// Two modes: one generation at a time, or every generation at once as
-// coloured "ghosts" with the path each one took.
+// It never touches src/main.ts's game loop; it drives the same pure engine
+// and draws with the same renderer.
 import trainingHistory from "./training-history.json"
 import {
+  CANVAS_H,
+  CANVAS_W,
   LEVELS,
   createPlayingState,
   hasDied,
@@ -15,15 +16,14 @@ import {
   step,
   type GameState,
 } from "../src/engine"
-import { COLORS, drawScene, drawEntities } from "../src/render"
-import { drawText } from "../src/font"
+import { COLORS, drawScene, drawEntities, withCamera } from "../src/render"
+import { drawText, drawTextCentered } from "../src/font"
+import { Menu } from "../src/menu"
 import { drawFitnessChart } from "./chart"
 import { RUN_FRAME_BUDGET, actionFor } from "./policy"
+import { GENERATIONS, createTrainer, type GenerationRecord, type LevelHistory } from "./evolution"
 
-// Types come from the trainer that writes this file, so the two can't drift.
-// `import type` is erased, so no Node-only code reaches the browser bundle.
-import type { GenerationRecord, LevelHistory } from "./train"
-
+type Screen = "menu" | "replay" | "training"
 type Ghost = {
   record: GenerationRecord
   index: number
@@ -32,34 +32,40 @@ type Ghost = {
   finished: boolean
 }
 
-const history: { levels: LevelHistory[] } = trainingHistory
+const shipped = trainingHistory as { levels: LevelHistory[] }
+// Starts as the recording committed to the repo. Training in the browser
+// replaces it in memory only: a static host can't be written to, so keeping a
+// browser-trained result means downloading it and committing the file.
+let history: { levels: LevelHistory[] } = shipped
 
 const RESTART_DELAY_FRAMES = 90
 const PATH_SAMPLE_EVERY = 2
+const BLINK_HALF = 30
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game")!
 const ctx = canvas.getContext("2d")!
 ctx.imageSmoothingEnabled = false
 
-const levelButtonsEl = document.querySelector<HTMLDivElement>("#levels")!
-const modeButtonsEl = document.querySelector<HTMLDivElement>("#modes")!
-const generationsEl = document.querySelector<HTMLDivElement>("#generations")!
 const chartCanvas = document.querySelector<HTMLCanvasElement>("#chart")!
 const chartCtx = chartCanvas.getContext("2d")!
+const generationsEl = document.querySelector<HTMLDivElement>("#generations")!
 const statusEl = document.querySelector<HTMLDivElement>("#status")!
 
+let screen: Screen = "menu"
 let levelIndex = 0
 let generationIndex = 0
-let mode: "single" | "all" = "single"
+let showAllGenerations = false
 let frame = 0
+let blinkTimer = 0
 let restartCountdown = RESTART_DELAY_FRAMES
 let ghosts: Ghost[] = []
+let trainers: ReturnType<typeof createTrainer>[] = []
+let trainingLevel = 0
 
 function levelHistory() {
   return history.levels[levelIndex]
 }
 
-/** Blue for the first generation through to yellow for the last. */
 function generationColor(index: number, total: number) {
   const t = total <= 1 ? 1 : index / (total - 1)
   return `hsl(${210 - 160 * t}, 85%, ${45 + 15 * t}%)`
@@ -69,69 +75,75 @@ function makeGhost(record: GenerationRecord, index: number): Ghost {
   return { record, index, state: createPlayingState(levelIndex), path: [], finished: false }
 }
 
-function load(level: number, generation: number) {
+function startReplay(level: number, generation: number, all: boolean) {
+  screen = "replay"
   levelIndex = level
   generationIndex = generation
+  showAllGenerations = all
   frame = 0
   restartCountdown = RESTART_DELAY_FRAMES
 
-  const { generations, bestGeneration } = levelHistory()
-  ghosts =
-    mode === "all"
-      ? generations.map(makeGhost)
-      : [makeGhost(generations[generationIndex], generationIndex)]
-
-  renderControls()
-  drawFitnessChart(chartCtx, generations, bestGeneration)
+  const { generations } = levelHistory()
+  ghosts = all ? generations.map(makeGhost) : [makeGhost(generations[generationIndex], generationIndex)]
+  renderGenerationButtons()
+  drawFitnessChart(chartCtx, generations, levelHistory().bestGeneration)
 }
 
-function button(label: string, active: boolean, onClick: () => void, title?: string) {
-  const element = document.createElement("button")
-  element.textContent = label
-  element.className = active ? "active" : ""
-  if (title) element.title = title
-  element.onclick = onClick
-  return element
+function startTraining() {
+  screen = "training"
+  trainingLevel = 0
+  trainers = LEVELS.map((_, index) => createTrainer(index))
+  generationsEl.replaceChildren()
 }
 
-function renderControls() {
+function downloadHistory() {
+  const blob = new Blob([JSON.stringify(history)], { type: "application/json" })
+  const link = document.createElement("a")
+  link.href = URL.createObjectURL(blob)
+  link.download = "training-history.json"
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
+const menu = new Menu("AI CONSOLE", [
+  {
+    label: "BEKIJK BESTE RUN",
+    hint: "BESTE GENERATIE, LEVEL 1",
+    run: () => startReplay(0, history.levels[0].bestGeneration, false),
+  },
+  {
+    label: "ALLE GENERATIES",
+    hint: "ALLEMAAL TEGELIJK MET PAD",
+    run: () => startReplay(0, history.levels[0].bestGeneration, true),
+  },
+  { label: "TRAIN OPNIEUW", hint: "IN DE BROWSER, EEN MINUUT", run: startTraining },
+  { label: "DOWNLOAD DATA", hint: "JSON OM TE COMMITTEN", run: downloadHistory },
+  { label: "SPEEL ZELF", hint: "TERUG NAAR HET SPEL", run: () => (location.href = "../index.html") },
+])
+
+function renderGenerationButtons() {
+  if (screen !== "replay") {
+    generationsEl.replaceChildren()
+    return
+  }
   const { generations, bestGeneration } = levelHistory()
-
-  levelButtonsEl.replaceChildren(
-    ...history.levels.map((_, index) =>
-      button(`Level ${index + 1}`, index === levelIndex, () => load(index, history.levels[index].bestGeneration))
-    )
-  )
-
-  modeButtonsEl.replaceChildren(
-    button("Eén generatie", mode === "single", () => {
-      mode = "single"
-      load(levelIndex, generationIndex)
+  generationsEl.replaceChildren(
+    ...LEVELS.map((_, index) => {
+      const button = document.createElement("button")
+      button.textContent = `Level ${index + 1}`
+      button.className = index === levelIndex ? "active" : ""
+      button.onclick = () => startReplay(index, history.levels[index].bestGeneration, showAllGenerations)
+      return button
     }),
-    button("Alle generaties tegelijk", mode === "all", () => {
-      mode = "all"
-      load(levelIndex, generationIndex)
+    ...generations.map((record, index) => {
+      const button = document.createElement("button")
+      button.textContent = `${record.generation}${index === bestGeneration ? " ★" : ""}`
+      button.title = `beste fitness ${record.bestFitness.toFixed(1)}, ${record.solved} haalden het certificaat`
+      button.className = !showAllGenerations && index === generationIndex ? "active" : ""
+      button.onclick = () => startReplay(levelIndex, index, false)
+      return button
     })
   )
-
-  generationsEl.replaceChildren(
-    ...generations.map((record, index) =>
-      button(
-        `${record.generation}${index === bestGeneration ? " ★" : ""}`,
-        mode === "single" && index === generationIndex,
-        () => {
-          mode = "single"
-          load(levelIndex, index)
-        },
-        `beste fitness ${record.bestFitness.toFixed(1)}, ${record.solved} van de populatie haalde het certificaat`
-      )
-    )
-  )
-}
-
-function outcomeOf(ghost: Ghost) {
-  if (hasFinishedLevel(ghost.state)) return "CERTIFICAAT"
-  return hasDied(ghost.state) ? "GESTRAND" : "BEZIG"
 }
 
 function drawGhostPath(ghost: Ghost, color: string, width: number, alpha: number) {
@@ -148,89 +160,169 @@ function drawGhostPath(ghost: Ghost, color: string, width: number, alpha: number
   ctx.globalAlpha = 1
 }
 
-function drawAllGenerations() {
-  const total = ghosts.length
+function outcomeOf(ghost: Ghost) {
+  if (hasFinishedLevel(ghost.state)) return "CERTIFICAAT"
+  return hasDied(ghost.state) ? "GESTRAND" : "BEZIG"
+}
+
+/** The camera follows whichever ghost is furthest along. */
+function replayCamera() {
+  return Math.max(...ghosts.map((ghost) => ghost.state.cameraX))
+}
+
+function drawReplay() {
+  const cameraX = replayCamera()
   const bestIndex = levelHistory().bestGeneration
+  const lead = ghosts[bestIndex] ?? ghosts[0]
 
-  for (const ghost of ghosts) {
-    const isBest = ghost.index === bestIndex
-    drawGhostPath(ghost, generationColor(ghost.index, total), isBest ? 2 : 1, isBest ? 1 : 0.4)
+  withCamera(ctx, cameraX, () => {
+    drawScene(ctx, LEVELS[levelIndex])
+    if (showAllGenerations) {
+      for (const ghost of ghosts) {
+        const isBest = ghost.index === bestIndex
+        drawGhostPath(ghost, generationColor(ghost.index, ghosts.length), isBest ? 2 : 1, isBest ? 1 : 0.4)
+      }
+      for (const ghost of ghosts) {
+        if (ghost.index === bestIndex) continue
+        ctx.fillStyle = generationColor(ghost.index, ghosts.length)
+        ctx.globalAlpha = ghost.finished ? 0.35 : 1
+        ctx.fillRect(Math.round(ghost.state.player.x + 5), Math.round(ghost.state.player.y + 8), 6, 8)
+        ctx.globalAlpha = 1
+      }
+    }
+    drawEntities(ctx, lead.state)
+  })
+
+  if (showAllGenerations) {
+    const reached = ghosts.filter((ghost) => hasFinishedLevel(ghost.state)).length
+    drawText(ctx, `ALLE ${ghosts.length} GENERATIES`, 6, 6, 1, COLORS.ink)
+    drawText(ctx, `FRAME ${frame} ${reached} BINNEN`, 6, 26, 1, COLORS.ink)
+    statusEl.textContent =
+      `Level ${levelIndex + 1}, alle ${ghosts.length} generaties tegelijk (blauw = vroegste, geel = laatste). ` +
+      `${reached} haalden het certificaat.`
+  } else {
+    const ghost = ghosts[0]
+    drawText(ctx, `LEVEL ${levelIndex + 1} GEN ${ghost.record.generation}`, 6, 6, 1, COLORS.ink)
+    drawText(ctx, `FRAME ${frame} ${outcomeOf(ghost)}`, 6, 26, 1, COLORS.ink)
+    statusEl.textContent =
+      `Generatie ${ghost.record.generation}: beste fitness ${ghost.record.bestFitness.toFixed(1)}, ` +
+      `${ghost.record.solved} van de populatie haalde het certificaat. Escape voor het menu.`
+  }
+}
+
+function drawTraining() {
+  const trainer = trainers[trainingLevel]
+  const latest = trainer.generations[trainer.generations.length - 1]
+
+  ctx.fillStyle = COLORS.nightSky
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
+  drawTextCentered(ctx, "AAN HET TRAINEN", CANVAS_W / 2, 50, 1, COLORS.highlight)
+  drawTextCentered(ctx, `LEVEL ${trainingLevel + 1} VAN ${LEVELS.length}`, CANVAS_W / 2, 100, 1, "#ffffff")
+  drawTextCentered(
+    ctx,
+    `GENERATIE ${trainer.generations.length} VAN ${GENERATIONS}`,
+    CANVAS_W / 2,
+    130,
+    1,
+    "#ffffff"
+  )
+  if (latest) {
+    drawTextCentered(ctx, `${latest.solved} HAALDEN HET`, CANVAS_W / 2, 165, 1, "#8888cc")
+  }
+  if (blinkTimer < BLINK_HALF) {
+    drawTextCentered(ctx, "ESCAPE OM TE STOPPEN", CANVAS_W / 2, 215, 1, "#5a5a8c")
   }
 
-  for (const ghost of ghosts) {
-    if (ghost.index === bestIndex) continue
-    const player = ghost.state.player
-    ctx.fillStyle = generationColor(ghost.index, total)
-    ctx.globalAlpha = ghost.finished ? 0.35 : 1
-    ctx.fillRect(Math.round(player.x + 5), Math.round(player.y + 8), 6, 8)
-    ctx.globalAlpha = 1
+  drawFitnessChart(chartCtx, trainer.generations, 0)
+  statusEl.textContent = `Trainen gebeurt hier in de browser; met "download data" bewaar je het resultaat.`
+}
+
+function advanceTraining() {
+  const trainer = trainers[trainingLevel]
+  if (!trainer.done) {
+    trainer.runGeneration()
+    return
   }
-
-  // The best generation gets the real sprite so it stays readable in the crowd.
-  const best = ghosts[bestIndex] ?? ghosts[0]
-  drawEntities(ctx, best.state)
-
-  const reached = ghosts.filter((ghost) => hasFinishedLevel(ghost.state)).length
-  const alive = ghosts.filter((ghost) => !ghost.finished).length
-  drawText(ctx, `ALLE ${total} GENERATIES`, 6, 6, 1, COLORS.ink)
-  drawText(ctx, `FRAME ${frame} ${reached} BINNEN`, 6, 26, 1, COLORS.ink)
-  statusEl.textContent =
-    `Alle ${total} generaties tegelijk (blauw = vroegste, geel = laatste, sprite = beste generatie ` +
-    `${best.record.generation}). ${reached} haalden het certificaat, ${alive} nog onderweg.`
+  if (trainingLevel + 1 < trainers.length) {
+    trainingLevel++
+    return
+  }
+  history = { levels: trainers.map((each) => each.toHistory()) }
+  startReplay(0, history.levels[0].bestGeneration, false)
 }
 
-function drawSingleGeneration() {
-  const ghost = ghosts[0]
-  drawEntities(ctx, ghost.state)
-  drawText(ctx, `LEVEL ${levelIndex + 1} GEN ${ghost.record.generation}`, 6, 6, 1, COLORS.ink)
-  drawText(ctx, `FRAME ${frame} ${outcomeOf(ghost)}`, 6, 26, 1, COLORS.ink)
-  statusEl.textContent =
-    `Generatie ${ghost.record.generation}: beste fitness ${ghost.record.bestFitness.toFixed(1)}, ` +
-    `gemiddelde ${ghost.record.meanFitness.toFixed(1)}, ${ghost.record.solved} van de populatie haalde het certificaat.`
-}
-
-function draw() {
-  drawScene(ctx, LEVELS[levelIndex])
-  if (mode === "all") drawAllGenerations()
-  else drawSingleGeneration()
-}
-
-function advance(ghost: Ghost) {
+function advanceGhost(ghost: Ghost) {
   if (ghost.finished) return
   if (!isPlaying(ghost.state) || frame >= RUN_FRAME_BUDGET) {
     ghost.finished = true
     return
   }
   // Re-running the stored genome through the same deterministic engine
-  // reproduces that generation's run exactly, so no input traces need
-  // storing -- the weights are the recording.
+  // reproduces that generation's run exactly: the weights are the recording.
   ghost.state = step(ghost.state, actionFor(ghost.record.genome, ghost.state, LEVELS[levelIndex]))
   if (frame % PATH_SAMPLE_EVERY === 0) {
     ghost.path.push({ x: ghost.state.player.x + ghost.state.player.w / 2, y: ghost.state.player.y + 12 })
   }
 }
 
-function tick() {
+function advanceReplay() {
   if (ghosts.every((ghost) => ghost.finished)) {
     restartCountdown--
-    if (restartCountdown <= 0) load(levelIndex, generationIndex)
-  } else {
-    ghosts.forEach(advance)
-    frame++
-    restartCountdown = RESTART_DELAY_FRAMES
+    if (restartCountdown <= 0) startReplay(levelIndex, generationIndex, showAllGenerations)
+    return
   }
-  draw()
+  ghosts.forEach(advanceGhost)
+  frame++
+  restartCountdown = RESTART_DELAY_FRAMES
+}
+
+function toMenu() {
+  screen = "menu"
+  generationsEl.replaceChildren()
+  statusEl.textContent = "Kies met de pijltjes en Enter, of klik."
+}
+
+addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    toMenu()
+    return
+  }
+  if (screen !== "menu") return
+  if (event.key === "ArrowUp") menu.moveBy(-1)
+  else if (event.key === "ArrowDown") menu.moveBy(1)
+  else if (event.key === "Enter" || event.key === " ") menu.activate()
+  else return
+  event.preventDefault()
+})
+
+/** Mouse position in the canvas's own 480x270 coordinates. */
+function canvasY(event: MouseEvent) {
+  const bounds = canvas.getBoundingClientRect()
+  return (event.clientY - bounds.top) * (canvas.height / bounds.height)
+}
+
+canvas.addEventListener("mousemove", (event) => {
+  if (screen === "menu") menu.hover(canvasY(event))
+})
+canvas.addEventListener("click", (event) => {
+  if (screen !== "menu") return
+  if (menu.rowAt(canvasY(event)) !== null) menu.activate()
+})
+
+function tick() {
+  blinkTimer = (blinkTimer + 1) % 60
+
+  if (screen === "menu") menu.draw(ctx, blinkTimer)
+  else if (screen === "training") {
+    advanceTraining()
+    drawTraining()
+  } else {
+    advanceReplay()
+    drawReplay()
+  }
+
   requestAnimationFrame(tick)
 }
 
-// The recording is a separate file from the levels it was trained on, so it
-// can go stale -- say a level was added without retraining. Say so plainly
-// instead of failing on an undefined lookup halfway through a frame.
-if (history.levels.length < LEVELS.length) {
-  statusEl.textContent =
-    `De opname dekt ${history.levels.length} van de ${LEVELS.length} levels. ` +
-    `Draai "npm run train-agent" opnieuw om hem bij te werken.`
-} else {
-  load(0, history.levels[0].bestGeneration)
-  tick()
-}
+toMenu()
+tick()
