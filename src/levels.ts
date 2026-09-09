@@ -1,7 +1,8 @@
 import { certificateOn, enemyOn, mushroomOn, platform, startOn } from "./level-builders";
+import { Facing } from "./physics";
 
 export type Platform = { x: number; y: number; w: number; h: number };
-export type EnemyDef = { x: number; y: number; facing: 1 | -1 };
+export type EnemyDef = { x: number; y: number; facing: Facing };
 export type Rect = { x: number; y: number; w: number; h: number };
 
 export type MushroomDef = { x: number; y: number };
@@ -42,8 +43,8 @@ const two = {
   stair1: platform(470, 190, 110),
   stair2: platform(640, 150, 110),
   stair3: platform(820, 115, 120),
-  balcony: platform(1030, 160, 150),
-  prize: platform(1250, 120, 160),
+  balcony: platform(1030, 180, 150),
+  prize: platform(1250, 130, 160),
 };
 
 const three = {
@@ -62,9 +63,9 @@ export const LEVELS: Level[] = [
     timeLimit: 400,
     platforms: Object.values(one),
     enemies: [
-      enemyOn(one.ground, { offsetFromLeftEdge: 300, facing: -1 }),
-      enemyOn(one.midLedge, { offsetFromLeftEdge: 90, facing: -1 }),
-      enemyOn(one.groundEnd, { offsetFromLeftEdge: 200, facing: -1 }),
+      enemyOn(one.ground, { offsetFromLeftEdge: 300, facing: Facing.Left }),
+      enemyOn(one.midLedge, { offsetFromLeftEdge: 90, facing: Facing.Left }),
+      enemyOn(one.groundEnd, { offsetFromLeftEdge: 200, facing: Facing.Left }),
     ],
     mushrooms: [mushroomOn(one.firstLedge, 40)],
     certificate: certificateOn(one.prize, 70),
@@ -81,10 +82,10 @@ export const LEVELS: Level[] = [
     timeLimit: 400,
     platforms: Object.values(two),
     enemies: [
-      enemyOn(two.ground, { offsetFromLeftEdge: 250, facing: -1 }),
-      enemyOn(two.stair2, { offsetFromLeftEdge: 60, facing: -1 }),
-      enemyOn(two.groundEnd, { offsetFromLeftEdge: 260, facing: -1 }),
-      enemyOn(two.balcony, { offsetFromLeftEdge: 100, facing: -1 }),
+      enemyOn(two.ground, { offsetFromLeftEdge: 250, facing: Facing.Left }),
+      enemyOn(two.stair2, { offsetFromLeftEdge: 60, facing: Facing.Left }),
+      enemyOn(two.groundEnd, { offsetFromLeftEdge: 260, facing: Facing.Left }),
+      enemyOn(two.balcony, { offsetFromLeftEdge: 100, facing: Facing.Left }),
     ],
     mushrooms: [mushroomOn(two.ledge, 40), mushroomOn(two.balcony, 60)],
     certificate: certificateOn(two.prize, 80),
@@ -101,9 +102,9 @@ export const LEVELS: Level[] = [
     timeLimit: 400,
     platforms: Object.values(three),
     enemies: [
-      enemyOn(three.ground, { offsetFromLeftEdge: 200, facing: -1 }),
-      enemyOn(three.landing, { offsetFromLeftEdge: 120, facing: -1 }),
-      enemyOn(three.prize, { offsetFromLeftEdge: 140, facing: -1 }),
+      enemyOn(three.ground, { offsetFromLeftEdge: 200, facing: Facing.Left }),
+      enemyOn(three.landing, { offsetFromLeftEdge: 120, facing: Facing.Left }),
+      enemyOn(three.prize, { offsetFromLeftEdge: 140, facing: Facing.Left }),
     ],
     mushrooms: [mushroomOn(three.pillar2, 30)],
     certificate: certificateOn(three.prize, 150),

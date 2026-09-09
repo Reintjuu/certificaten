@@ -77,6 +77,40 @@ describe("level geometry", () => {
   }
 });
 
+describe("jump reach", () => {
+  // How far the feet can climb, straight from the physics: v^2 / 2g for the
+  // fastest and slowest rows of the jump table.
+  const runningRise = PHYSICS.jumpVelocity[4] ** 2 / (2 * PHYSICS.gravityRising[4]);
+  const HORIZONTAL_REACH = 130;
+  const MARGIN = 8;
+
+  for (const [index, level] of LEVELS.entries()) {
+    test(`level ${index + 1}: no platform asks for a climb that can't be made`, () => {
+      // A climb that needs all 80px of a perfect running jump reads as
+      // possible and isn't. Either make it comfortable or don't offer it.
+      for (const target of level.platforms) {
+        let easiestClimb = Infinity;
+        for (const source of level.platforms) {
+          if (source === target) {
+            continue;
+          }
+          const gap = Math.max(0, target.x - (source.x + source.w), source.x - (target.x + target.w));
+          const rise = source.y - target.y;
+          if (gap <= HORIZONTAL_REACH && rise > 0) {
+            easiestClimb = Math.min(easiestClimb, rise);
+          }
+        }
+
+        assert.ok(
+          easiestClimb === Infinity || easiestClimb <= runningRise - MARGIN,
+          `platform at x=${target.x} y=${target.y} needs a ${easiestClimb.toFixed(0)}px climb, ` +
+            `and a running jump only lifts the feet ${runningRise.toFixed(0)}px`
+        );
+      }
+    });
+  }
+});
+
 describe("sprites", () => {
   const playerFrames = {
     SmallIdle: SMALL_PLAYER.idle,

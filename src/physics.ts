@@ -92,7 +92,16 @@ export const PHYSICS = {
   enemyH: ENEMY_SIZE.h,
 } as const;
 
-export type Direction = -1 | 0 | 1;
+/**
+ * Written as a const object rather than a TypeScript `enum`: the values stay
+ * plain numbers, so they survive JSON and arithmetic untouched, while the call
+ * sites read as names.
+ */
+export const Direction = { Left: -1, None: 0, Right: 1 } as const;
+export type Direction = (typeof Direction)[keyof typeof Direction];
+
+export const Facing = { Left: Direction.Left, Right: Direction.Right } as const;
+export type Facing = (typeof Facing)[keyof typeof Facing];
 
 export type Player = {
   x: number;
@@ -102,7 +111,7 @@ export type Player = {
   vx: number;
   vy: number;
   grounded: boolean;
-  facing: 1 | -1;
+  facing: Facing;
   animTimer: number;
   animFrame: 0 | 1;
   /** RunningTimer: keeps run status for a few frames after letting go of B. */
@@ -177,7 +186,7 @@ export function createPlayer(start: { x: number; y: number }): Player {
     vx: 0,
     vy: 0,
     grounded: false,
-    facing: 1,
+    facing: Facing.Right,
     animTimer: 0,
     animFrame: 0,
     runningTimer: 0,
@@ -306,7 +315,7 @@ function frictionAdder(p: Player, dir: Direction, movingDir: Direction, running:
     : Math.abs(p.vx) >= PHYSICS.fastSpeedThreshold
       ? PHYSICS.accelFastNotRunning
       : PHYSICS.accelWalking;
-  const turningAround = dir !== 0 && movingDir !== 0 && dir !== movingDir;
+  const turningAround = dir !== Direction.None && movingDir !== Direction.None && dir !== movingDir;
   return turningAround ? base * PHYSICS.skidMultiplier : base;
 }
 
@@ -323,33 +332,41 @@ function updateRunningTimer(p: Player, input: Input, pushingAlong: boolean): voi
  * letting go slows you at the same rate that holding a direction sped you up.
  */
 export function applyHorizontalInput(p: Player, input: Input): Direction {
-  const pressed: Direction = input.right && !input.left ? 1 : input.left && !input.right ? -1 : 0;
-  if (pressed !== 0) {
+  const pressed: Direction =
+    input.right && !input.left
+      ? Direction.Right
+      : input.left && !input.right
+        ? Direction.Left
+        : Direction.None;
+  if (pressed !== Direction.None) {
     p.facing = pressed;
   }
   // Crouching big Mario keeps his momentum but can't walk.
-  const dir: Direction = p.crouching ? 0 : pressed;
+  const dir: Direction = p.crouching ? Direction.None : pressed;
   // Player_MovingDir keeps the last direction travelled when standing still,
   // which is what lets you break into a run from a standstill.
   const movingDir: Direction = p.vx !== 0 ? (Math.sign(p.vx) as Direction) : p.facing;
-  const pushingAlong = dir !== 0 && dir === movingDir;
+  const pushingAlong = dir !== Direction.None && dir === movingDir;
 
   updateRunningTimer(p, input, pushingAlong);
   const running = isRunning(p, input, pushingAlong);
   const maxSpeed = running ? PHYSICS.maxRunSpeed : PHYSICS.maxWalkSpeed;
   const adder = frictionAdder(p, dir, movingDir, running);
 
-  if (dir !== 0) {
+  if (dir !== Direction.None) {
     p.vx = clamp(p.vx + dir * adder, -maxSpeed, maxSpeed);
     p.facing = dir;
     return dir;
   }
 
-  if (p.vx !== 0) {
+  // In the air with nothing held, SMB1 skips friction entirely (LRAir only
+  // calls ImposeFriction when a direction is pressed), so a jump keeps all of
+  // its horizontal speed. Only the ground brakes you.
+  if (p.grounded && p.vx !== 0) {
     const braked = p.vx - movingDir * adder;
     p.vx = Math.sign(braked) === movingDir ? clamp(braked, -maxSpeed, maxSpeed) : 0;
   }
-  return 0;
+  return Direction.None;
 }
 
 export function jumpIndexFor(speed: number): number {
@@ -402,7 +419,7 @@ export function updateAnimation(p: Player, dir: Direction): void {
   if (!p.grounded) {
     return;
   }
-  if (dir === 0) {
+  if (dir === Direction.None) {
     p.animTimer = 0;
     p.animFrame = 0;
     return;

@@ -17,6 +17,7 @@ import {
   walkCycleFramesFor,
   type Enemy,
   type Input,
+  Facing,
   type Player,
 } from "../src/physics";
 import type { Level } from "../src/levels";
@@ -78,6 +79,18 @@ describe("clamp and overlaps", () => {
 });
 
 describe("applyHorizontalInput", () => {
+  test("a jump keeps its horizontal speed: only the ground brakes you", () => {
+    // LRAir skips ImposeFriction when no direction is held, so momentum
+    // carries you across a gap even if you let go of the pad.
+    const airborne = player({ vx: PHYSICS.maxRunSpeed, grounded: false });
+    applyHorizontalInput(airborne, input());
+    assert.equal(airborne.vx, PHYSICS.maxRunSpeed);
+
+    const grounded = player({ vx: PHYSICS.maxRunSpeed, grounded: true });
+    applyHorizontalInput(grounded, input());
+    assert.ok(grounded.vx < PHYSICS.maxRunSpeed);
+  });
+
   test("accelerates and reports the direction", () => {
     const p = player();
     assert.equal(applyHorizontalInput(p, input({ right: true })), 1);
@@ -122,19 +135,19 @@ describe("applyHorizontalInput", () => {
   });
 
   test("pressing both directions cancels out", () => {
-    const p = player({ vx: 1 });
+    const p = player({ vx: 1, grounded: true });
     assert.equal(applyHorizontalInput(p, input({ left: true, right: true })), 0);
     assert.ok(p.vx < 1, "and friction still applies");
   });
 
   test("friction lands exactly on zero instead of overshooting into reverse", () => {
-    const p = player({ vx: PHYSICS.accelWalking / 2 });
+    const p = player({ vx: PHYSICS.accelWalking / 2, grounded: true });
     applyHorizontalInput(p, input());
     assert.equal(p.vx, 0);
   });
 
   test("facing only changes when a direction is actually pressed", () => {
-    const p = player({ facing: -1, vx: -1 });
+    const p = player({ facing: Facing.Left, vx: -1, grounded: true });
     applyHorizontalInput(p, input());
     assert.equal(p.facing, -1);
   });
