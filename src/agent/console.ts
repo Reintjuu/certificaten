@@ -1,35 +1,24 @@
 // The AI console: pick what to do from a menu instead of running npm scripts.
 // It replays recorded runs, trains fresh ones in the browser, and hands the
-// result back as a file. Open it at /agent/replay.html.
+// result back as a file. The title screen opens it.
 //
-// It never touches src/main.ts's game loop; it drives the same pure engine
-// and draws with the same renderer.
+// It never touches the game's own loop; it borrows the canvas, drives the same
+// pure engine and draws with the same renderer.
 import trainingHistory from "./training-history.json";
-import {
-  CANVAS_H,
-  CANVAS_W,
-  LEVELS,
-  createPlayingState,
-  hasDied,
-  hasFinishedLevel,
-  isPlaying,
-  step,
-  type GameState,
-} from "../src/engine";
-import { COLORS, drawScene, drawEntities, withCamera } from "../src/render";
-import { drawText, drawTextCentered } from "../src/font";
-import { Menu } from "../src/menu";
+import { CANVAS_H, CANVAS_W, LEVELS } from "../engine";
+import { COLORS, drawScene, drawEntities, withCamera } from "../render";
+import { drawText, drawTextCentered } from "../font";
+import { Menu } from "../menu";
 import { drawFitnessChart } from "./chart";
-import { RUN_FRAME_BUDGET, actionFor } from "./policy";
+import { RunOutcome, advanceRun, startRun, type Run } from "./run";
 import { GENERATIONS, createTrainer, type GenerationRecord, type LevelHistory } from "./evolution";
 
 type Screen = "menu" | "replay" | "training";
 type Ghost = {
   record: GenerationRecord;
   index: number;
-  state: GameState;
+  run: Run;
   path: { x: number; y: number }[];
-  finished: boolean;
 };
 
 const shipped = trainingHistory;
@@ -46,14 +35,13 @@ const MENU_DOWN_KEYS = new Set(["ArrowDown", "s"]);
 const MENU_SELECT_KEYS = new Set(["Enter", " "]);
 const MENU_BACK_KEYS = new Set(["Escape"]);
 
-const canvas = document.querySelector<HTMLCanvasElement>("#game")!;
-const ctx = canvas.getContext("2d")!;
-ctx.imageSmoothingEnabled = false;
-
-const chartCanvas = document.querySelector<HTMLCanvasElement>("#chart")!;
-const chartCtx = chartCanvas.getContext("2d")!;
-const generationsEl = document.querySelector<HTMLDivElement>("#generations")!;
-const statusEl = document.querySelector<HTMLDivElement>("#status")!;
+let canvas!: HTMLCanvasElement;
+let ctx!: CanvasRenderingContext2D;
+let chartCtx!: CanvasRenderingContext2D;
+let generationsEl!: HTMLDivElement;
+let statusEl!: HTMLDivElement;
+let leaveConsole: (() => void) | null = null;
+let running = false;
 
 let screen: Screen = "menu";
 let levelIndex = 0;
@@ -76,7 +64,11 @@ function generationColor(index: number, total: number): string {
 }
 
 function makeGhost(record: GenerationRecord, index: number): Ghost {
-  return { record, index, state: createPlayingState(levelIndex), path: [], finished: false };
+  return { record, index, run: startRun(levelIndex), path: [] };
+}
+
+function isFinished(ghost: Ghost): boolean {
+  return ghost.run.outcome !== RunOutcome.Running;
 }
 
 function startReplay(level: number, generation: number, all: boolean): void {
@@ -126,7 +118,13 @@ const menu = new Menu("AI CONSOLE", [
   },
   { label: "TRAIN OPNIEUW", hint: "IN DE BROWSER, EEN MINUUT", run: startTraining },
   { label: "DOWNLOAD DATA", hint: "JSON OM TE COMMITTEN", run: downloadHistory },
-  { label: "SPEEL ZELF", hint: "TERUG NAAR HET SPEL", run: () => (location.href = "../index.html") },
+  {
+    label: "SPEEL ZELF",
+    hint: "TERUG NAAR HET SPEL",
+    run: () => {
+      leaveConsole?.();
+    },
+  },
 ]);
 
 function renderGenerationButtons(): void {
@@ -177,16 +175,17 @@ function drawGhostPath(ghost: Ghost, color: string, width: number, alpha: number
   ctx.globalAlpha = 1;
 }
 
-function outcomeOf(ghost: Ghost): string {
-  if (hasFinishedLevel(ghost.state)) {
-    return "CERTIFICAAT";
-  }
-  return hasDied(ghost.state) ? "GESTRAND" : "BEZIG";
-}
+const OUTCOME_LABELS: Record<RunOutcome, string> = {
+  [RunOutcome.Running]: "BEZIG",
+  [RunOutcome.Solved]: "CERTIFICAAT",
+  [RunOutcome.Died]: "GESTRAND",
+  [RunOutcome.Stalled]: "VASTGELOPEN",
+  [RunOutcome.OutOfTime]: "TIJD OP",
+};
 
 /** The camera follows whichever ghost is furthest along. */
 function replayCamera(): number {
-  return Math.max(...ghosts.map((ghost) => ghost.state.cameraX));
+  return Math.max(...ghosts.map((ghost) => ghost.run.state.cameraX));
 }
 
 function drawReplay(): void {
@@ -206,16 +205,21 @@ function drawReplay(): void {
           continue;
         }
         ctx.fillStyle = generationColor(ghost.index, ghosts.length);
-        ctx.globalAlpha = ghost.finished ? 0.35 : 1;
-        ctx.fillRect(Math.round(ghost.state.player.x + 5), Math.round(ghost.state.player.y + 8), 6, 8);
+        ctx.globalAlpha = isFinished(ghost) ? 0.35 : 1;
+        ctx.fillRect(
+          Math.round(ghost.run.state.player.x + 5),
+          Math.round(ghost.run.state.player.y + 8),
+          6,
+          8
+        );
         ctx.globalAlpha = 1;
       }
     }
-    drawEntities(ctx, lead.state);
+    drawEntities(ctx, lead.run.state);
   });
 
   if (showAllGenerations) {
-    const reached = ghosts.filter((ghost) => hasFinishedLevel(ghost.state)).length;
+    const reached = ghosts.filter((ghost) => ghost.run.outcome === RunOutcome.Solved).length;
     drawText(ctx, `ALLE ${ghosts.length} GENERATIES`, 6, 6, 1, COLORS.ink);
     drawText(ctx, `FRAME ${frame} ${reached} BINNEN`, 6, 26, 1, COLORS.ink);
     statusEl.textContent =
@@ -224,11 +228,21 @@ function drawReplay(): void {
   } else {
     const ghost = ghosts[0];
     drawText(ctx, `LEVEL ${levelIndex + 1} GEN ${ghost.record.generation}`, 6, 6, 1, COLORS.ink);
-    drawText(ctx, `FRAME ${frame} ${outcomeOf(ghost)}`, 6, 26, 1, COLORS.ink);
+    drawText(ctx, `FRAME ${frame} ${OUTCOME_LABELS[ghost.run.outcome]}`, 6, 26, 1, COLORS.ink);
     statusEl.textContent =
       `Generatie ${ghost.record.generation}: beste fitness ${ghost.record.bestFitness.toFixed(1)}, ` +
       `${ghost.record.solved} van de populatie haalde het certificaat. Escape voor het menu.`;
   }
+}
+
+/** Shows movement within a generation, so a slow level still looks alive. */
+function drawProgressBar(progress: number): void {
+  const width = 240;
+  const x = (CANVAS_W - width) / 2;
+  ctx.fillStyle = COLORS.selectedRow;
+  ctx.fillRect(x, 158, width, 8);
+  ctx.fillStyle = COLORS.highlight;
+  ctx.fillRect(x, 158, Math.round(width * progress), 8);
 }
 
 function drawTraining(): void {
@@ -247,8 +261,9 @@ function drawTraining(): void {
     1,
     COLORS.text
   );
+  drawProgressBar(trainer.generationProgress);
   if (latest) {
-    drawTextCentered(ctx, `${latest.solved} HAALDEN HET`, CANVAS_W / 2, 165, 1, COLORS.dimText);
+    drawTextCentered(ctx, `${latest.solved} HAALDEN HET`, CANVAS_W / 2, 185, 1, COLORS.dimText);
   }
   if (blinkTimer < BLINK_HALF) {
     drawTextCentered(ctx, "ESCAPE OM TE STOPPEN", CANVAS_W / 2, 215, 1, COLORS.faintText);
@@ -258,38 +273,52 @@ function drawTraining(): void {
   statusEl.textContent = `Trainen gebeurt hier in de browser; met "download data" bewaar je het resultaat.`;
 }
 
-function advanceTraining(): void {
-  const trainer = trainers[trainingLevel];
-  if (!trainer.done) {
-    trainer.runGeneration();
-    return;
-  }
-  if (trainingLevel + 1 < trainers.length) {
-    trainingLevel++;
-    return;
-  }
-  history = { levels: trainers.map((each) => each.toHistory()) };
+/**
+ * How long training may hold the thread each frame. A whole generation is 80
+ * runs and takes a few hundred milliseconds, which used to be done between two
+ * paints: the page froze and the generation counter looked stuck. Scoring
+ * candidates one at a time until the budget runs out keeps the frame alive.
+ */
+const TRAINING_BUDGET_MS = 10;
+
+function finishTraining(): void {
+  history = { levels: trainers.map((trainer) => trainer.toHistory()) };
   startReplay(0, history.levels[0].bestGeneration, false);
 }
 
-function advanceGhost(ghost: Ghost): void {
-  if (ghost.finished) {
-    return;
+function advanceTraining(): void {
+  const deadline = performance.now() + TRAINING_BUDGET_MS;
+  for (;;) {
+    const trainer = trainers[trainingLevel];
+    if (!trainer.done) {
+      trainer.evaluateNext();
+    } else if (trainingLevel + 1 < trainers.length) {
+      trainingLevel++;
+    } else {
+      finishTraining();
+      return;
+    }
+    if (performance.now() >= deadline) {
+      return;
+    }
   }
-  if (!isPlaying(ghost.state) || frame >= RUN_FRAME_BUDGET) {
-    ghost.finished = true;
+}
+
+function advanceGhost(ghost: Ghost): void {
+  if (isFinished(ghost)) {
     return;
   }
   // Re-running the stored genome through the same deterministic engine
   // reproduces that generation's run exactly: the weights are the recording.
-  ghost.state = step(ghost.state, actionFor(ghost.record.genome, ghost.state, LEVELS[levelIndex]));
+  ghost.run = advanceRun(ghost.run, ghost.record.genome, levelIndex);
   if (frame % PATH_SAMPLE_EVERY === 0) {
-    ghost.path.push({ x: ghost.state.player.x + ghost.state.player.w / 2, y: ghost.state.player.y + 12 });
+    const { player } = ghost.run.state;
+    ghost.path.push({ x: player.x + player.w / 2, y: player.y + 12 });
   }
 }
 
 function advanceReplay(): void {
-  if (ghosts.every((ghost) => ghost.finished)) {
+  if (ghosts.every(isFinished)) {
     restartCountdown--;
     if (restartCountdown <= 0) {
       startReplay(levelIndex, generationIndex, showAllGenerations);
@@ -306,10 +335,9 @@ function toMenu(): void {
   generationsEl.replaceChildren();
   statusEl.textContent = "Kies met de pijltjes en Enter, of klik.";
 }
-
 const CONSOLE_KEYS = new Set([...MENU_UP_KEYS, ...MENU_DOWN_KEYS, ...MENU_SELECT_KEYS, ...MENU_BACK_KEYS]);
 
-addEventListener("keydown", (event) => {
+function onKeyDown(event: KeyboardEvent): void {
   // Same rule as the game: swallow only the keys this page acts on, so the
   // browser's own shortcuts and Firefox's type-ahead find stay out of the way.
   if (event.ctrlKey || event.metaKey || event.altKey) {
@@ -319,7 +347,13 @@ addEventListener("keydown", (event) => {
     event.preventDefault();
   }
   if (MENU_BACK_KEYS.has(event.key)) {
-    toMenu();
+    // Escape backs out one step at a time: a screen returns to the menu, the
+    // menu returns to the game.
+    if (screen === "menu") {
+      leaveConsole?.();
+    } else {
+      toMenu();
+    }
     return;
   }
   if (screen !== "menu") {
@@ -332,7 +366,7 @@ addEventListener("keydown", (event) => {
   } else if (MENU_SELECT_KEYS.has(event.key)) {
     menu.activate();
   }
-});
+}
 
 /** Mouse position in the canvas's own 480x270 coordinates. */
 function canvasY(event: MouseEvent): number {
@@ -340,21 +374,25 @@ function canvasY(event: MouseEvent): number {
   return (event.clientY - bounds.top) * (canvas.height / bounds.height);
 }
 
-canvas.addEventListener("mousemove", (event) => {
+function onMouseMove(event: MouseEvent): void {
   if (screen === "menu") {
     menu.hover(canvasY(event));
   }
-});
-canvas.addEventListener("click", (event) => {
+}
+
+function onClick(event: MouseEvent): void {
   if (screen !== "menu") {
     return;
   }
   if (menu.rowAt(canvasY(event)) !== null) {
     menu.activate();
   }
-});
+}
 
 function tick(): void {
+  if (!running) {
+    return;
+  }
   blinkTimer = (blinkTimer + 1) % 60;
 
   if (screen === "menu") {
@@ -370,5 +408,61 @@ function tick(): void {
   requestAnimationFrame(tick);
 }
 
-toMenu();
-tick();
+/** The chrome the console needs beyond the canvas, built when it opens. */
+function buildChrome(container: HTMLElement): void {
+  statusEl = document.createElement("div");
+  statusEl.id = "status";
+
+  const caption = document.createElement("h2");
+  caption.textContent = "Fitness per generatie (\u2605 = beste). Escape brengt je terug.";
+
+  const chartCanvas = document.createElement("canvas");
+  chartCanvas.width = 960;
+  chartCanvas.height = 180;
+  chartCanvas.id = "chart";
+  chartCtx = chartCanvas.getContext("2d")!;
+
+  generationsEl = document.createElement("div");
+  generationsEl.id = "generations";
+
+  container.replaceChildren(statusEl, caption, chartCanvas, generationsEl);
+  container.hidden = false;
+}
+
+export type ConsoleOptions = {
+  canvas: HTMLCanvasElement;
+  container: HTMLElement;
+  onExit: () => void;
+};
+
+/**
+ * Hands the canvas to the console until the player leaves it again. The game
+ * loads this lazily, so neither the console nor the training data it carries
+ * costs anything until someone opens it.
+ */
+export function openConsole(options: ConsoleOptions): void {
+  canvas = options.canvas;
+  ctx = canvas.getContext("2d")!;
+  ctx.imageSmoothingEnabled = false;
+  buildChrome(options.container);
+
+  const listeners = new AbortController();
+  const { signal } = listeners;
+  addEventListener("keydown", onKeyDown, { signal });
+  canvas.addEventListener("mousemove", onMouseMove, { signal });
+  canvas.addEventListener("click", onClick, { signal });
+
+  leaveConsole = (): void => {
+    running = false;
+    listeners.abort();
+    options.container.replaceChildren();
+    options.container.hidden = true;
+    options.onExit();
+  };
+
+  screen = "menu";
+  history = shipped;
+  running = true;
+  toMenu();
+  tick();
+}

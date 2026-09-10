@@ -3,6 +3,7 @@ import {
   CANVAS_W,
   CANVAS_H,
   LEVELS,
+  NO_INPUT,
   assertNever,
   createInitialState,
   step,
@@ -10,16 +11,22 @@ import {
 } from "./engine";
 import { COLORS, drawScene, drawEntities, withCamera } from "./render";
 import { drawText, drawTextCentered, wrapText } from "./font";
-import { consumesKey, readInput } from "./input";
+import { Menu } from "./menu";
+import { consumesKey, readInput, readMenuInput } from "./input";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game")!;
 const ctx = canvas.getContext("2d")!;
 ctx.imageSmoothingEnabled = false;
 
+const consoleContainer = document.querySelector<HTMLElement>("#console")!;
+const controlsHint = document.querySelector<HTMLElement>("#controls")!;
+
 const RESTART_PROMPT = "DRUK OP R: OPNIEUW";
 
 const keys = new Set<string>();
 let prevKeys = new Set<string>();
+let state: GameState = createInitialState();
+let running = true;
 
 addEventListener("keydown", (event) => {
   // Leave shortcuts alone: Ctrl+R must still reload the page.
@@ -39,7 +46,59 @@ addEventListener("blur", () => {
   keys.clear();
 });
 
-let state: GameState = createInitialState();
+function startGame(): void {
+  state = step(state, { ...NO_INPUT, confirmPressed: true });
+}
+
+/**
+ * The console and the training data it carries are a lazy import, so the game
+ * itself stays a couple of kilobytes: nothing of it is fetched until someone
+ * picks it from the title screen.
+ */
+function openAgentConsole(): void {
+  running = false;
+  controlsHint.hidden = true;
+  void import("./agent/console").then(({ openConsole }) => {
+    openConsole({
+      canvas,
+      container: consoleContainer,
+      onExit: () => {
+        controlsHint.hidden = false;
+        state = createInitialState();
+        keys.clear();
+        prevKeys = new Set();
+        running = true;
+        loop();
+      },
+    });
+  });
+}
+
+const titleMenu = new Menu(
+  "QUEESTE NAAR DE",
+  [
+    { label: "SPEEL", hint: "BEGIN BIJ LOKET EEN", run: startGame },
+    { label: "AI CONSOLE", hint: "LAAT DE AI HET DOEN", run: openAgentConsole },
+  ],
+  "CERTIFICATEN"
+);
+
+/** Mouse position in the canvas's own 480x270 coordinates. */
+function canvasY(event: MouseEvent): number {
+  const bounds = canvas.getBoundingClientRect();
+  return (event.clientY - bounds.top) * (canvas.height / bounds.height);
+}
+
+canvas.addEventListener("mousemove", (event) => {
+  if (running && state.phase === "title") {
+    titleMenu.hover(canvasY(event));
+  }
+});
+canvas.addEventListener("click", (event) => {
+  if (running && state.phase === "title" && titleMenu.rowAt(canvasY(event)) !== null) {
+    titleMenu.activate();
+  }
+});
 
 /** Laid out like SMB1's header: labels on one row, values under them. */
 function drawHud(state: GameState): void {
@@ -83,18 +142,6 @@ function drawDialogueBox(state: GameState): void {
   }
 }
 
-function drawTitleScreen(state: GameState): void {
-  ctx.fillStyle = COLORS.nightSky;
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-
-  drawTextCentered(ctx, "QUEESTE NAAR DE", CANVAS_W / 2, 60, 1, COLORS.text);
-  drawTextCentered(ctx, "CERTIFICATEN", CANVAS_W / 2, 84, 1, COLORS.highlight);
-
-  if (state.blinkTimer < BLINK_PERIOD_FRAMES / 2) {
-    drawTextCentered(ctx, "PRESS START", CANVAS_W / 2, 170, 1, COLORS.text);
-  }
-}
-
 function drawGameComplete(): void {
   ctx.fillStyle = COLORS.nightSky;
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
@@ -119,7 +166,7 @@ function drawWorld(state: GameState): void {
 function draw(state: GameState): void {
   switch (state.phase) {
     case "title":
-      drawTitleScreen(state);
+      titleMenu.draw(ctx, state.blinkTimer);
       return;
     case "dialogue":
       withCamera(ctx, state.cameraX, () => {
@@ -144,9 +191,32 @@ function draw(state: GameState): void {
   }
 }
 
+/** On the title screen the same keys drive the menu instead of the player. */
+function advanceTitle(): void {
+  const menuInput = readMenuInput(keys, prevKeys);
+  if (menuInput.up) {
+    titleMenu.moveBy(-1);
+  }
+  if (menuInput.down) {
+    titleMenu.moveBy(1);
+  }
+  if (menuInput.confirm) {
+    titleMenu.activate();
+  }
+  if (state.phase === "title") {
+    state = step(state, NO_INPUT);
+  }
+}
+
 function loop(): void {
-  const input = readInput(keys, prevKeys);
-  state = step(state, input);
+  if (!running) {
+    return;
+  }
+  if (state.phase === "title") {
+    advanceTitle();
+  } else {
+    state = step(state, readInput(keys, prevKeys));
+  }
   draw(state);
   prevKeys = new Set(keys);
   requestAnimationFrame(loop);

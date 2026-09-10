@@ -1,6 +1,6 @@
 // Draws the learning curve of one training run. Kept apart from replay.ts so
 // that file is only about replaying runs, not about plotting them.
-import { COLORS as GAME_COLORS } from "../src/render";
+import { COLORS as GAME_COLORS } from "../render";
 import type { GenerationRecord } from "./train";
 
 const LEGEND_HEIGHT = 26;

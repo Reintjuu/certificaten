@@ -2,26 +2,31 @@
 // library) mapping the game state to a movement decision. Shared by the
 // trainer and the replay viewer so a recorded genome always behaves the same
 // in both.
-import { CANVAS_W, CANVAS_H, PHYSICS, type GameState, type Input, type Level } from "../src/engine";
-
-/** How long a single attempt at a level may last, in frames (15s at 60fps).
- * The trainer records runs against this and the viewer replays them against
- * it, so it has to be one number, not two. Crossing a 1440px level at
- * running speed already takes about 600 frames. */
-export const RUN_FRAME_BUDGET = 1800;
+import { CANVAS_W, CANVAS_H, PHYSICS, type GameState, type Input, type Level } from "../engine";
+import type { Random } from "./random";
 
 /** How far an output must swing before it counts as pressing a direction. */
 const MOVE_THRESHOLD = 0.2;
 
-export const INPUT_SIZE = 9;
+export const INPUT_SIZE = 12;
 const HIDDEN_SIZE = 8;
 const OUTPUT_SIZE = 3;
 export const GENOME_SIZE = HIDDEN_SIZE * (INPUT_SIZE + 1) + OUTPUT_SIZE * (HIDDEN_SIZE + 1);
 
 export type Genome = number[];
 
-export function randomGenome(): Genome {
-  return Array.from({ length: GENOME_SIZE }, () => Math.random() * 2 - 1);
+/**
+ * Weights are kept to four decimals. A tanh network cannot tell the difference,
+ * and the recording committed to the repo shrinks by two thirds because JSON
+ * no longer writes out seventeen digits per weight. Rounding happens where
+ * weights are made, so what runs in memory is exactly what lands in the file.
+ */
+export function roundWeight(weight: number): number {
+  return Math.round(weight * 1e4) / 1e4;
+}
+
+export function randomGenome(random: Random = Math.random): Genome {
+  return Array.from({ length: GENOME_SIZE }, () => roundWeight(random() * 2 - 1));
 }
 
 export function forward(genome: Genome, inputs: number[]): [number, number, number] {
@@ -48,6 +53,35 @@ export function forward(genome: Genome, inputs: number[]): [number, number, numb
   return outputs;
 }
 
+/**
+ * How far ahead the terrain probes look, in pixels. Roughly a running jump's
+ * worth of ground, so a pit shows up while there is still time to jump.
+ */
+const PROBE_OFFSETS = [20, 48, 80] as const;
+/** A step further up or down than this reads as fully up or fully down. */
+const PROBE_RANGE = 80;
+
+/**
+ * The height of the ground at one point ahead, relative to the player's feet:
+ * positive is a step up, negative a drop, and -1 means no ground at all within
+ * range, which is what a pit looks like. Without these the agent is blind to
+ * the level's shape and can only aim at the certificate, which is why it used
+ * to clear a level by luck rather than by reading the ledge in front of it.
+ */
+function groundProbe(level: Level, x: number, feetY: number): number {
+  let surfaceY = Infinity;
+  for (const platform of level.platforms) {
+    const spansX = x >= platform.x && x <= platform.x + platform.w;
+    if (spansX && platform.y >= feetY - PROBE_RANGE && platform.y < surfaceY) {
+      surfaceY = platform.y;
+    }
+  }
+  if (!Number.isFinite(surfaceY)) {
+    return -1;
+  }
+  return Math.max(-1, Math.min(1, (feetY - surfaceY) / PROBE_RANGE));
+}
+
 /** Everything the agent gets to "see", normalised to roughly -1..1. */
 export function features(state: GameState, level: Level): number[] {
   const player = state.player;
@@ -68,7 +102,11 @@ export function features(state: GameState, level: Level): number[] {
     }
   }
 
+  const feetY = player.y + player.h;
+  const centerX = player.x + player.w / 2;
+
   return [
+    ...PROBE_OFFSETS.map((offset) => groundProbe(level, centerX + player.facing * offset, feetY)),
     (certificate.x - player.x) / CANVAS_W,
     (certificate.y - player.y) / CANVAS_H,
     player.vx / PHYSICS.maxRunSpeed,

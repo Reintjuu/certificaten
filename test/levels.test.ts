@@ -148,7 +148,7 @@ describe("sprites", () => {
 
   test("player sprites are as wide as the hitbox and at least as tall", () => {
     // The sprite is drawn standing on the hitbox's feet. Big Mario's sprite is
-    // deliberately taller than his box -- the ROM does the same -- so it may
+    // deliberately taller than his box, as the ROM does, so it may
     // overhang upwards, but never be shorter than the box it represents.
     for (const [name, frame] of Object.entries(playerFrames)) {
       assert.equal(frame[0].length, PHYSICS.playerW, `${name} is not as wide as the player hitbox`);

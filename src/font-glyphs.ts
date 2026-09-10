@@ -1,12 +1,13 @@
 // Bitmap glyph data derived from the "Super Mario Bros. NES" TrueType font
 // by Patrick Adams (TheWolfBunny64), https://thewolfbunny64.itch.io/super-mario-bros-nes
 // Used with the creator's permission (credit required, see README). Each glyph was
-// rendered at 16x16 and thresholded to hard black/white pixels -- no anti-aliasing --
+// rendered at 16x16 and thresholded to hard black/white pixels, with no
+// anti-aliasing,
 // so it stays crisp under nearest-neighbor canvas scaling.
 const BLANK_GLYPH = Array(16).fill('0000000000000000')
 
 // Small hand-authored downward-triangle glyph, used as the dialogue box's
-// "more text follows" indicator -- not part of the derived TTF glyph set.
+// "more text follows" indicator. Not part of the derived TTF glyph set.
 const TRIANGLE_DOWN_GLYPH = [
   '0000000000000000',
   '0000000000000000',

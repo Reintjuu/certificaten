@@ -73,7 +73,7 @@ describe("jumping", () => {
     const held = input({ jumpPressed: true, jumpHeld: true });
 
     // The original bug allowed a new jump whenever |vy| was near zero, which
-    // is also true at the apex -- so the player could climb forever.
+    // is also true at the apex, so the player could climb forever.
     let state = start;
     let highest = start.player.y;
     let touchedGroundAgain = false;

@@ -1,12 +1,23 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { GLYPHS } from "../src/font-glyphs";
 import { textWidth, wrapText } from "../src/font";
 import { LEVELS } from "../src/levels";
 
 const GLYPH_SIZE = 16;
-const DRAWN_TEXT_SOURCES = ["src/main.ts", "src/menu.ts", "agent/replay.ts"];
+/**
+ * Found rather than listed: a hand-kept list is how the menu's marker glyph
+ * once slipped through this check unnoticed.
+ */
+const DRAWN_TEXT_SOURCES = readdirSync("src", { recursive: true, encoding: "utf8" })
+  .filter((name) => name.endsWith(".ts"))
+  .map((name) => `src/${name}`)
+  .filter((file) => {
+    const source = readFileSync(file, "utf8");
+    // The module that declares drawText only mentions its own name.
+    return source.includes("drawText") && !source.includes("export function drawText");
+  });
 
 function missingGlyphs(text: string): string[] {
   return [...new Set(text.toUpperCase())].filter((ch) => !(ch in GLYPHS));
@@ -108,7 +119,7 @@ describe("glyph coverage", () => {
     for (const file of DRAWN_TEXT_SOURCES) {
       assert.ok(
         drawTextCalls(file).length >= 2,
-        `found no drawText calls in ${file} -- the scan regex is stale`
+        `found no drawText calls in ${file}, so the scan regex is stale`
       );
     }
   });
@@ -127,7 +138,7 @@ describe("glyph coverage", () => {
 
   test("every literal string drawn on screen can be rendered", () => {
     // Regression: '/' and '▼' were used on screen without existing in the
-    // glyph set, and drawText silently skips unknown characters -- so the
+    // glyph set, and drawText silently skips unknown characters, so the
     // text just quietly rendered with a hole in it.
     for (const call of DRAWN_TEXT_SOURCES.flatMap(drawTextCalls)) {
       assert.deepEqual(
@@ -154,7 +165,7 @@ describe("text scaling", () => {
   test("text is only ever drawn at whole-number scales", () => {
     // Regression: at a fractional scale each source pixel is rounded
     // independently, so adjacent columns collapse onto the same output pixel
-    // and glyphs distort -- a 'B' rendered at scale 0.75 read as a 'D'.
+    // and glyphs distort: a 'B' rendered at scale 0.75 read as a 'D'.
     for (const call of DRAWN_TEXT_SOURCES.flatMap(drawTextCalls)) {
       assert.ok(call.scale !== null, `could not read the scale argument in ${call.file}`);
       assert.ok(

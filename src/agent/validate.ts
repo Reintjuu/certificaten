@@ -5,7 +5,7 @@
 // its options against the real engine and keeps the one that gets furthest: the
 // engine is pure, so a simulated hop costs a few dozen cheap steps. That keeps
 // this honest when the physics change, which is exactly when a canary has to
-// stay trustworthy -- the previous hand-tuned version silently became useless
+// stay trustworthy. The previous hand-tuned version silently became useless
 // the moment the numbers moved.
 import {
   LEVELS,
@@ -17,8 +17,8 @@ import {
   step,
   type GameState,
   type Input,
-} from "../src/engine";
-import type { Level } from "../src/levels";
+} from "../engine";
+import type { Level } from "../levels";
 
 const FRAME_BUDGET = 1800; // 30s at 60fps
 const HOP_BUDGET = 90; // how far ahead one candidate move is simulated

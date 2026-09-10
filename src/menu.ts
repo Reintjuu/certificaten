@@ -18,7 +18,8 @@ export class Menu {
 
   constructor(
     private readonly title: string,
-    private readonly items: MenuItem[]
+    private readonly items: MenuItem[],
+    private readonly subtitle?: string
   ) {}
 
   moveBy(delta: number): void {
@@ -54,7 +55,12 @@ export class Menu {
   draw(ctx: CanvasRenderingContext2D, blinkTimer: number): void {
     ctx.fillStyle = COLORS.nightSky;
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-    drawTextCentered(ctx, this.title, CANVAS_W / 2, 40, SCALE, COLORS.highlight);
+    if (this.subtitle === undefined) {
+      drawTextCentered(ctx, this.title, CANVAS_W / 2, 40, SCALE, COLORS.highlight);
+    } else {
+      drawTextCentered(ctx, this.title, CANVAS_W / 2, 32, SCALE, COLORS.text);
+      drawTextCentered(ctx, this.subtitle, CANVAS_W / 2, 56, SCALE, COLORS.highlight);
+    }
 
     this.items.forEach((item, index) => {
       const isSelected = index === this.selected;

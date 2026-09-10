@@ -34,7 +34,7 @@ export const PHYSICS = {
   fastSpeedThreshold: 0x21 * SUBPIXEL,
   /**
    * In the air X_Physics ignores the button entirely and only asks whether
-   * you're already going at least $19 -- that is the whole difference between
+   * you're already going at least $19. That is the whole difference between
    * steering on the ground and steering mid-jump.
    */
   airRunningSpeedThreshold: 0x19 * SUBPIXEL,

@@ -9,8 +9,8 @@
     "build:github-pages": "vite build --base=/certificaten/",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "validate-levels": "tsx agent/validate.ts",
-    "train-agent": "tsx agent/train.ts",
+    "validate-levels": "tsx src/agent/validate.ts",
+    "train-agent": "tsx src/agent/train.ts",
     "test": "node --import tsx --test test/*.test.ts",
     "lint": "prettier --check . && eslint .",
     "format": "prettier --write ."

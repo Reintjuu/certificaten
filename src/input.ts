@@ -10,6 +10,8 @@ export const KEY_BINDINGS = {
   /** The NES B button: hold to run instead of walk. */
   run: new Set(["shift", "x"]),
   reset: new Set(["r"]),
+  menuUp: new Set(["arrowup", "w"]),
+  menuDown: new Set(["arrowdown", "s"]),
 } as const;
 
 const GAME_KEYS = new Set(Object.values(KEY_BINDINGS).flatMap((keys) => [...keys]));
@@ -58,5 +60,16 @@ export function readInput(current: ReadonlySet<string>, previous: ReadonlySet<st
     jumpPressed: anyPressed(current, previous, KEY_BINDINGS.jump),
     confirmPressed: anyPressed(current, previous, KEY_BINDINGS.confirm),
     resetPressed: anyPressed(current, previous, KEY_BINDINGS.reset),
+  };
+}
+
+/** Menu navigation, which reads the same keys as movement but means something else. */
+export type MenuInput = { up: boolean; down: boolean; confirm: boolean };
+
+export function readMenuInput(current: ReadonlySet<string>, previous: ReadonlySet<string>): MenuInput {
+  return {
+    up: anyPressed(current, previous, KEY_BINDINGS.menuUp),
+    down: anyPressed(current, previous, KEY_BINDINGS.menuDown),
+    confirm: anyPressed(current, previous, KEY_BINDINGS.confirm),
   };
 }

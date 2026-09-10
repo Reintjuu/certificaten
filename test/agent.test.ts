@@ -10,11 +10,11 @@ import {
   forward,
   randomGenome,
   type Genome,
-} from "../agent/policy";
-import { evaluate, type LevelHistory } from "../agent/evolution";
+} from "../src/agent/policy";
+import { evaluate, type LevelHistory } from "../src/agent/evolution";
 
 const history = JSON.parse(
-  readFileSync(new URL("../agent/training-history.json", import.meta.url), "utf8")
+  readFileSync(new URL("../src/agent/training-history.json", import.meta.url), "utf8")
 ) as {
   levels: LevelHistory[];
 };
@@ -101,7 +101,7 @@ describe("recorded training history", () => {
 
   test("each level's best genome still finishes that level", () => {
     // The engine is deterministic, so a stored genome must reproduce its run
-    // exactly -- this fails if physics or level geometry changes without
+    // exactly, so this fails if physics or level geometry changes without
     // retraining, which is precisely when the recording goes stale.
     for (const level of history.levels) {
       const best = level.generations[level.bestGeneration].genome;

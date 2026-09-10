@@ -1,11 +1,11 @@
 // Command-line trainer: runs the evolution in agent/evolution.ts to
-// completion and writes agent/training-history.json, which the replay page
+// completion and writes src/agent/training-history.json, which the console
 // ships as its default recording. Run with: npm run train-agent
 //
 // The same evolution runs in the browser from the AI console, where it can't
 // write a file; there you download the result and commit it.
 import { writeFileSync } from "node:fs";
-import { LEVELS } from "../src/engine";
+import { LEVELS } from "../engine";
 import { GENERATIONS, POPULATION_SIZE, createTrainer, type LevelHistory } from "./evolution";
 
 export type { GenerationRecord, LevelHistory } from "./evolution";
@@ -52,7 +52,7 @@ function main(): void {
   console.log(
     `\nSimulated ${framesSimulated.toLocaleString("en")} frames ` +
       `(${(framesSimulated / FPS / SECONDS_PER_HOUR).toFixed(1)}h of play at 60fps) in ${seconds.toFixed(1)}s ` +
-      `-- roughly ${Math.round(framesSimulated / FPS / seconds).toLocaleString("en")}x realtime.`
+      `(roughly ${Math.round(framesSimulated / FPS / seconds).toLocaleString("en")}x realtime).`
   );
   console.log(`Wrote ${outPath.pathname}`);
 }

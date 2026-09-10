@@ -7,7 +7,7 @@ import type { Facing } from "./physics";
 /**
  * BoundBoxCtrlData gives big Mario a 24px-tall box and the small/crouching
  * one 12px. The widths there are 12 and 10, but this game's sprites and level
- * geometry are built on 16, so the width stays 16 -- a deliberate deviation.
+ * geometry are built on 16, so the width stays 16: a deliberate deviation.
  */
 export const PLAYER_SIZE = { w: 16, h: 24 } as const;
 export const SMALL_PLAYER_SIZE = { w: 16, h: 16 } as const;
