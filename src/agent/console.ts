@@ -5,10 +5,11 @@
 // It never touches the game's own loop; it borrows the canvas, drives the same
 // pure engine and draws with the same renderer.
 import trainingHistory from "./training-history.json";
-import { CANVAS_H, CANVAS_W, LEVELS } from "../engine";
-import { COLORS, drawScene, drawEntities, withCamera } from "../render";
+import { CANVAS_H, CANVAS_W, LEVELS, type Level } from "../engine";
+import { COLORS, drawFrameRate, drawScene, drawEntities, withCamera } from "../render";
 import { drawText, drawTextCentered } from "../font";
 import { Menu } from "../menu";
+import { createFrameRate } from "../fps";
 import { drawFitnessChart } from "./chart";
 import { RunOutcome, advanceRun, startRun, type Run } from "./run";
 import { GENERATIONS, createTrainer, type GenerationRecord, type LevelHistory } from "./evolution";
@@ -18,7 +19,9 @@ type Ghost = {
   record: GenerationRecord;
   index: number;
   run: Run;
+  /** Only the leading ghost keeps its whole path; the rest paint into trails. */
   path: { x: number; y: number }[];
+  lastPoint: { x: number; y: number } | null;
 };
 
 const shipped = trainingHistory;
@@ -34,6 +37,7 @@ const MENU_UP_KEYS = new Set(["ArrowUp", "w"]);
 const MENU_DOWN_KEYS = new Set(["ArrowDown", "s"]);
 const MENU_SELECT_KEYS = new Set(["Enter", " "]);
 const MENU_BACK_KEYS = new Set(["Escape"]);
+const FRAME_RATE_KEYS = new Set(["f", "F"]);
 
 let canvas!: HTMLCanvasElement;
 let ctx!: CanvasRenderingContext2D;
@@ -42,6 +46,9 @@ let generationsEl!: HTMLDivElement;
 let statusEl!: HTMLDivElement;
 let leaveConsole: (() => void) | null = null;
 let running = false;
+
+const frameRate = createFrameRate();
+let showFrameRate = false;
 
 let screen: Screen = "menu";
 let levelIndex = 0;
@@ -64,7 +71,7 @@ function generationColor(index: number, total: number): string {
 }
 
 function makeGhost(record: GenerationRecord, index: number): Ghost {
-  return { record, index, run: startRun(levelIndex), path: [] };
+  return { record, index, run: startRun(levelIndex), path: [], lastPoint: null };
 }
 
 function isFinished(ghost: Ghost): boolean {
@@ -80,6 +87,7 @@ function startReplay(level: number, generation: number, all: boolean): void {
   restartCountdown = RESTART_DELAY_FRAMES;
 
   const { generations } = levelHistory();
+  resetTrails(LEVELS[levelIndex]);
   ghosts = all ? generations.map(makeGhost) : [makeGhost(generations[generationIndex], generationIndex)];
   renderGenerationButtons();
   drawFitnessChart(chartCtx, generations, levelHistory().bestGeneration);
@@ -156,13 +164,58 @@ function renderGenerationButtons(): void {
   );
 }
 
-function drawGhostPath(ghost: Ghost, color: string, width: number, alpha: number): void {
+/**
+ * The trails of the ninety-nine also-rans, painted once as each segment
+ * happens instead of restroked in full every frame. Re-stroking every ghost's
+ * whole history came to 13,600 lineTo calls a frame by the end of a run. The
+ * leading ghost is still drawn live, because one path is 300 calls and it
+ * keeps its exact look.
+ */
+const FADED_TRAIL_ALPHA = 0.4;
+let trails: HTMLCanvasElement | null = null;
+let trailCtx: CanvasRenderingContext2D | null = null;
+
+function resetTrails(level: Level): void {
+  if (trails?.width !== level.width) {
+    trails = document.createElement("canvas");
+    trails.width = level.width;
+    trails.height = CANVAS_H;
+    trailCtx = trails.getContext("2d");
+  }
+  trailCtx?.clearRect(0, 0, trails.width, trails.height);
+}
+
+function extendTrail(ghost: Ghost, to: { x: number; y: number }): void {
+  const from = ghost.lastPoint;
+  ghost.lastPoint = to;
+  if (from === null || trailCtx === null || ghost.index === levelHistory().bestGeneration) {
+    return;
+  }
+  trailCtx.strokeStyle = generationColor(ghost.index, ghosts.length);
+  trailCtx.lineWidth = 1;
+  trailCtx.beginPath();
+  trailCtx.moveTo(from.x, from.y);
+  trailCtx.lineTo(to.x, to.y);
+  trailCtx.stroke();
+}
+
+function drawTrails(cameraX: number): void {
+  if (trails === null) {
+    return;
+  }
+  const left = Math.round(cameraX);
+  const width = Math.min(CANVAS_W, trails.width - left);
+  ctx.globalAlpha = FADED_TRAIL_ALPHA;
+  ctx.drawImage(trails, left, 0, width, CANVAS_H, left, 0, width, CANVAS_H);
+  ctx.globalAlpha = 1;
+}
+
+function drawLeadPath(ghost: Ghost): void {
   if (ghost.path.length < 2) {
     return;
   }
-  ctx.globalAlpha = alpha;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = width;
+  ctx.strokeStyle = generationColor(ghost.index, ghosts.length);
+  ctx.lineWidth = 2;
   ctx.beginPath();
   ghost.path.forEach((point, index) => {
     if (index === 0) {
@@ -172,7 +225,6 @@ function drawGhostPath(ghost: Ghost, color: string, width: number, alpha: number
     }
   });
   ctx.stroke();
-  ctx.globalAlpha = 1;
 }
 
 const OUTCOME_LABELS: Record<RunOutcome, string> = {
@@ -194,12 +246,10 @@ function drawReplay(): void {
   const lead = ghosts[bestIndex] ?? ghosts[0];
 
   withCamera(ctx, cameraX, () => {
-    drawScene(ctx, LEVELS[levelIndex]);
+    drawScene(ctx, LEVELS[levelIndex], cameraX);
     if (showAllGenerations) {
-      for (const ghost of ghosts) {
-        const isBest = ghost.index === bestIndex;
-        drawGhostPath(ghost, generationColor(ghost.index, ghosts.length), isBest ? 2 : 1, isBest ? 1 : 0.4);
-      }
+      drawTrails(cameraX);
+      drawLeadPath(lead);
       for (const ghost of ghosts) {
         if (ghost.index === bestIndex) {
           continue;
@@ -311,10 +361,15 @@ function advanceGhost(ghost: Ghost): void {
   // Re-running the stored genome through the same deterministic engine
   // reproduces that generation's run exactly: the weights are the recording.
   ghost.run = advanceRun(ghost.run, ghost.record.genome, levelIndex);
-  if (frame % PATH_SAMPLE_EVERY === 0) {
-    const { player } = ghost.run.state;
-    ghost.path.push({ x: player.x + player.w / 2, y: player.y + 12 });
+  if (frame % PATH_SAMPLE_EVERY !== 0) {
+    return;
   }
+  const { player } = ghost.run.state;
+  const point = { x: player.x + player.w / 2, y: player.y + 12 };
+  if (ghost.index === levelHistory().bestGeneration) {
+    ghost.path.push(point);
+  }
+  extendTrail(ghost, point);
 }
 
 function advanceReplay(): void {
@@ -335,7 +390,13 @@ function toMenu(): void {
   generationsEl.replaceChildren();
   statusEl.textContent = "Kies met de pijltjes en Enter, of klik.";
 }
-const CONSOLE_KEYS = new Set([...MENU_UP_KEYS, ...MENU_DOWN_KEYS, ...MENU_SELECT_KEYS, ...MENU_BACK_KEYS]);
+const CONSOLE_KEYS = new Set([
+  ...MENU_UP_KEYS,
+  ...MENU_DOWN_KEYS,
+  ...MENU_SELECT_KEYS,
+  ...MENU_BACK_KEYS,
+  ...FRAME_RATE_KEYS,
+]);
 
 function onKeyDown(event: KeyboardEvent): void {
   // Same rule as the game: swallow only the keys this page acts on, so the
@@ -345,6 +406,10 @@ function onKeyDown(event: KeyboardEvent): void {
   }
   if (CONSOLE_KEYS.has(event.key)) {
     event.preventDefault();
+  }
+  if (FRAME_RATE_KEYS.has(event.key)) {
+    showFrameRate = !showFrameRate;
+    return;
   }
   if (MENU_BACK_KEYS.has(event.key)) {
     // Escape backs out one step at a time: a screen returns to the menu, the
@@ -405,6 +470,10 @@ function tick(): void {
     drawReplay();
   }
 
+  frameRate.record();
+  if (showFrameRate) {
+    drawFrameRate(ctx, frameRate.perSecond);
+  }
   requestAnimationFrame(tick);
 }
 

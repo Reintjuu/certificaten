@@ -1,6 +1,8 @@
 // Hand-authored pixel art (original), not derived from any Nintendo asset.
 // Grid legend: space = transparent, letters index into PALETTE below.
-export const PALETTE: Record<string, string> = {
+// Deliberately possibly-undefined: a space, or any letter not listed here,
+// is transparent rather than a colour.
+export const PALETTE: Record<string, string | undefined> = {
   'R': '#d82828',
   'D': '#8c1414',
   'S': '#ffcc99',

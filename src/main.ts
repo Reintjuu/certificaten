@@ -9,10 +9,11 @@ import {
   step,
   type GameState,
 } from "./engine";
-import { COLORS, drawScene, drawEntities, withCamera } from "./render";
+import { COLORS, drawFrameRate, drawScene, drawEntities, withCamera } from "./render";
 import { drawText, drawTextCentered, wrapText } from "./font";
 import { Menu } from "./menu";
-import { consumesKey, readInput, readMenuInput } from "./input";
+import { createFrameRate } from "./fps";
+import { KEY_BINDINGS, consumesKey, readInput, readMenuInput } from "./input";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game")!;
 const ctx = canvas.getContext("2d")!;
@@ -30,6 +31,9 @@ const pressedKeys = new Set<string>();
 let state: GameState = createInitialState();
 let running = true;
 
+const frameRate = createFrameRate();
+let showFrameRate = false;
+
 addEventListener("keydown", (event) => {
   // Leave shortcuts alone: Ctrl+R must still reload the page.
   if (event.ctrlKey || event.metaKey || event.altKey) {
@@ -43,6 +47,9 @@ addEventListener("keydown", (event) => {
   // new press, and counting it as one would re-trigger the jump on landing.
   if (!event.repeat) {
     pressedKeys.add(key);
+    if (KEY_BINDINGS.frameRate.has(key)) {
+      showFrameRate = !showFrameRate;
+    }
   }
   heldKeys.add(key);
 });
@@ -166,7 +173,7 @@ function drawDeadOverlay(): void {
 
 function drawWorld(state: GameState): void {
   withCamera(ctx, state.cameraX, () => {
-    drawScene(ctx, LEVELS[state.levelIndex]);
+    drawScene(ctx, LEVELS[state.levelIndex], state.cameraX);
     drawEntities(ctx, state);
   });
 }
@@ -178,7 +185,7 @@ function draw(state: GameState): void {
       return;
     case "dialogue":
       withCamera(ctx, state.cameraX, () => {
-        drawScene(ctx, LEVELS[state.levelIndex]);
+        drawScene(ctx, LEVELS[state.levelIndex], state.cameraX);
       });
       drawDialogueBox(state);
       return;
@@ -226,6 +233,10 @@ function loop(): void {
     state = step(state, readInput(heldKeys, pressedKeys));
   }
   draw(state);
+  frameRate.record();
+  if (showFrameRate) {
+    drawFrameRate(ctx, frameRate.perSecond);
+  }
   pressedKeys.clear();
   requestAnimationFrame(loop);
 }

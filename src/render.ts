@@ -1,4 +1,5 @@
-import { CANVAS_H, type GameState, type Level, type Player } from "./engine";
+import { CANVAS_H, CANVAS_W, type GameState, type Level, type Player } from "./engine";
+import { drawText } from "./font";
 import {
   drawSprite,
   BIG_PLAYER,
@@ -45,7 +46,7 @@ export function withCamera(ctx: CanvasRenderingContext2D, cameraX: number, draw:
   ctx.restore();
 }
 
-export function drawScene(ctx: CanvasRenderingContext2D, level: Level): void {
+function paintScene(ctx: CanvasRenderingContext2D, level: Level): void {
   ctx.fillStyle = COLORS.sky;
   ctx.fillRect(0, 0, level.width, CANVAS_H);
 
@@ -69,6 +70,35 @@ export function drawScene(ctx: CanvasRenderingContext2D, level: Level): void {
   ctx.fillStyle = COLORS.paperInk;
   ctx.fillRect(certificate.x + 4, certificate.y + 4, 10, 4);
   ctx.fillRect(certificate.x + 7, certificate.y + 8, 4, 11);
+}
+
+/**
+ * Sky, clouds, platforms and the certificate never move, so the level is
+ * painted once and then blitted. One level's worth is held at a time, which
+ * costs a rebuild on a level change and 1.5MB rather than three of them.
+ */
+let painted: { level: Level; image: HTMLCanvasElement } | null = null;
+
+function sceneFor(level: Level): HTMLCanvasElement {
+  if (painted?.level === level) {
+    return painted.image;
+  }
+  const image = document.createElement("canvas");
+  image.width = level.width;
+  image.height = CANVAS_H;
+  paintScene(image.getContext("2d")!, level);
+  painted = { level, image };
+  return image;
+}
+
+/**
+ * Draws only the strip the camera is looking at. Called inside withCamera, so
+ * a slice taken at level coordinate `left` lands at the left edge of the view.
+ */
+export function drawScene(ctx: CanvasRenderingContext2D, level: Level, cameraX: number): void {
+  const left = Math.round(cameraX);
+  const width = Math.min(CANVAS_W, level.width - left);
+  ctx.drawImage(sceneFor(level), left, 0, width, CANVAS_H, left, 0, width, CANVAS_H);
 }
 
 function playerFrame(player: Player): Frame {
@@ -111,4 +141,12 @@ export function drawEntities(ctx: CanvasRenderingContext2D, state: GameState): v
   if (player.invincibleFramerules % 2 === 0) {
     drawSprite(ctx, frame, player.x, spriteY, 1, player.facing === -1);
   }
+}
+
+/** Bottom left, out of the HUD's way. Only drawn once there is a reading. */
+export function drawFrameRate(ctx: CanvasRenderingContext2D, perSecond: number | null): void {
+  if (perSecond === null) {
+    return;
+  }
+  drawText(ctx, `${perSecond} FPS`, 6, CANVAS_H - 22, 1, COLORS.faintText);
 }

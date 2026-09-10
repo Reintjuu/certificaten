@@ -115,13 +115,16 @@ function drawTextCalls(file: string): { file: string; text: string; scale: numbe
 describe("glyph coverage", () => {
   test("the source scan actually finds the draw calls it checks", () => {
     // Without this, a broken regex would make the two scanning tests below
-    // pass by finding nothing at all.
+    // pass by finding nothing at all. Per file one call is enough to prove
+    // the scan reaches it; the total guards against it finding only stragglers.
     for (const file of DRAWN_TEXT_SOURCES) {
       assert.ok(
-        drawTextCalls(file).length >= 2,
+        drawTextCalls(file).length >= 1,
         `found no drawText calls in ${file}, so the scan regex is stale`
       );
     }
+    const total = DRAWN_TEXT_SOURCES.flatMap(drawTextCalls).length;
+    assert.ok(total >= 20, `the scan found only ${total} drawText calls across the game`);
   });
 
   test("every dialogue line in every level can be rendered", () => {
