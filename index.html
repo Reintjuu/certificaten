@@ -8,29 +8,79 @@
       html,
       body {
         margin: 0;
-        height: 100%;
+        min-height: 100%;
         background: #111;
-        display: grid;
-        place-items: center;
+        color: #ddd;
+        font-family: monospace;
       }
-      canvas {
+      .wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        padding: 16px;
+      }
+      canvas#game {
         width: min(96vw, 960px);
         image-rendering: pixelated;
         image-rendering: crisp-edges;
         border: 4px solid #222;
       }
-      p {
-        position: fixed;
-        bottom: 8px;
+      #controls {
         color: #aaa;
-        font: 14px monospace;
+        font-size: 14px;
+      }
+      #console {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+      }
+      #console canvas {
+        width: min(96vw, 960px);
+        border: 1px solid #333;
+      }
+      #console h2 {
+        font-size: 13px;
+        color: #888;
+        margin: 4px 0 0;
+        font-weight: normal;
+      }
+      #console #status {
+        color: #aaa;
+        font-size: 12px;
+      }
+      #console #generations {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        max-width: min(96vw, 960px);
+        justify-content: center;
+      }
+      #console button {
+        background: #222;
+        color: #ddd;
+        border: 1px solid #444;
+        padding: 4px 9px;
+        cursor: pointer;
+        font: inherit;
+      }
+      #console button:hover {
+        background: #333;
+      }
+      #console button.active {
+        background: #ffd84a;
+        color: #111;
+        border-color: #ffd84a;
       }
     </style>
-    <script type="module" crossorigin src="/certificaten/assets/game-Cn_fYIdX.js"></script>
-    <link rel="modulepreload" crossorigin href="/certificaten/assets/font-ByaDwuWW.js">
+    <script type="module" crossorigin src="/certificaten/assets/index-C-Oty2sk.js"></script>
   </head>
   <body>
-    <canvas id="game" width="480" height="270"></canvas>
-    <p>Pijltjes / A-D = bewegen · Spatie / W = springen · Shift = rennen · R = opnieuw</p>
+    <div class="wrap">
+      <canvas id="game" width="480" height="270"></canvas>
+      <p id="controls">Pijltjes / A-D = bewegen · Spatie / W = springen · Shift = rennen · R = opnieuw</p>
+      <div id="console" hidden></div>
+    </div>
   </body>
 </html>
