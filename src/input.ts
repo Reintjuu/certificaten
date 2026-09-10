@@ -10,6 +10,8 @@ export const KEY_BINDINGS = {
   /** The NES B button: hold to run instead of walk. */
   run: new Set(["shift", "x"]),
   reset: new Set(["r"]),
+  /** Toggles the frame rate readout. */
+  frameRate: new Set(["f"]),
   menuUp: new Set(["arrowup", "w"]),
   menuDown: new Set(["arrowdown", "s"]),
 } as const;

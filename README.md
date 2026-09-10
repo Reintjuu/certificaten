@@ -12,7 +12,7 @@ npm run lint     # prettier + eslint
 npm run format   # prettier --write
 ```
 
-Besturing: pijltjes/A-D bewegen, **Shift rennen**, spatie/W springen (kort tikken = lage hop, ingedrukt houden = volle sprong), **pijl omlaag/S bukken** (alleen groot), R reset het huidige level.
+Besturing: pijltjes/A-D bewegen, **Shift rennen**, spatie/W springen (kort tikken = lage hop, ingedrukt houden = volle sprong), **pijl omlaag/S bukken** (alleen groot), R reset het huidige level, F toont de framerate.
 
 ## Physics
 
@@ -53,7 +53,7 @@ Twee details die vaak verkeerd worden nagemaakt: SMB1 varieert de spronghoogte d
 | `src/agent/`                    | De test- en AI-tooling. Eigen map met een eigen richting: hij importeert de engine, de levels en de renderer, maar niets in `src/` importeert ooit iets uit `src/agent/`, behalve de lazy import van de console.            |
 | `test/`                         | Unit tests (Node's ingebouwde test runner, geen extra framework), inclusief controles op leveldata en pixel-art: niets zweeft, vijanden lopen niet van hun platform, sprites zijn rechthoekig en even groot als hun hitbox. |
 
-Er is één entry point: `index.html`. Het titelscherm heeft twee regels, **speel** en **AI console**, en die tweede doet een dynamische import. Daardoor kost de AI-kant niets zolang je hem niet opent: het spel is 37 kB (9 kB gzipped), de console met alle trainingsdata erin 408 kB (25 kB gzipped) en die wordt pas opgehaald als je hem kiest.
+Er is één entry point: `index.html`. Het titelscherm heeft twee regels, **speel** en **AI console**, en die tweede doet een dynamische import. Daardoor kost de AI-kant niets zolang je hem niet opent: het spel is 39 kB (10 kB gzipped), de console met alle trainingsdata erin 331 kB (21 kB gzipped) en die wordt pas opgehaald als je hem kiest.
 
 ## Agent-tooling
 
@@ -74,22 +74,26 @@ Escape gaat steeds één stap terug: van een scherm naar het menu, van het menu 
 
 ### Wat de agent ziet en waarop hij scoort
 
-De policy is een klein feed-forward netwerkje (12 inputs, 8 verborgen neuronen, 3 outputs: links/rechts, springen, rennen) zonder ML-library. Naast de richting van het certificaat, zijn eigen snelheid en de dichtstbijzijnde vijand krijgt hij **drie terreinvoelers**: op 20, 48 en 80px vóór zich meet hij de hoogte van de grond ten opzichte van zijn voeten, waarbij −1 "hier is helemaal geen grond" betekent. Zonder die voelers is hij blind voor de vorm van het level en haalde hij het certificaat alleen per ongeluk: met dezelfde seed ging level 1 en 3 van nul oplossingen naar respectievelijk 6 en 41 van de 80.
+De policy is een klein feed-forward netwerkje (12 inputs, 8 verborgen neuronen, 3 outputs: links/rechts, springen, rennen) zonder ML-library. Naast de richting van het certificaat, zijn eigen snelheid en de dichtstbijzijnde vijand krijgt hij **drie terreinvoelers**: op 20, 48 en 80px vóór zich meet hij de hoogte van de grond ten opzichte van zijn voeten, waarbij −1 "hier is helemaal geen grond" betekent. Zonder die voelers is hij blind voor de vorm van het level en haalde hij het certificaat alleen per ongeluk: met dezelfde seed gingen level 1 en 3 van nul oplossingen naar respectievelijk 6 en 41 van de 80.
 
 Scoren gebeurt op tijd, niet op overleven:
 
 ```
-opgelost   -> 2000 + (framebudget − gebruikte frames)   # sneller is strikt beter
-niet gehaald -> −afstand tot het certificaat            # hoe dichtbij kwam hij
+opgelost     -> 2000 + (framebudget − gebruikte frames)   # sneller is strikt beter
+niet gehaald -> −afstand tot het certificaat              # hoe dichtbij kwam hij
 ```
 
-De vorige versie gaf een bonus per overleefd frame. Onder die regel scoorde een agent die tien seconden ronddobberde en dan binnenkwam _hoger_ dan eentje die er meteen heen liep, en dat is precies wat hij deed. Nu ligt de snelste route van elk level rond de 570 frames, oftewel 9,5 seconden speeltijd, en houdt de beste agent op alle drie de levels de rentoets ingedrukt (top speed 2,5 px per frame, de volle `$28` uit de ROM).
+De solve-bonus hoeft niet groter. Halen is al een eigen klasse (minimaal 2000 tegenover hoogstens 0 voor een misser), en de selectie bestaat uitsluitend uit vergelijkingen: toernooiselectie, sorteren voor de elites en een `Math.max`. Een groter getal zou niets herordenen.
+
+Wat wél uitmaakte is hoe die afstand gemeten wordt. In pure pixels overheerst de horizontale term, want een level is 1440 breed en 270 hoog. Op level 1 staat het certificaat 95px boven de grond terwijl een perfecte rensprong 80px tilt, dus de enige route is een tweetrapsklim; van de 1200 punten die er te verdienen waren leverde rechts vasthouden er 1105 op en de klim 95. De agent leerde precies waar hij voor betaald werd: sprinten, eronderdoor lopen en tegen de muur op x 1424 stilvallen, waar 43 van de 100 beste genomen eindigden. De verticale term wordt nu geschaald met de breedte van het level gedeeld door de hoogte, wat neerkomt op beide assen normaliseren naar de ruimte die er op die as is. Level 1 ging van 6 oplossers naar 30, level 2 van 15 naar 22, en level 3 zakte van 41 naar 29 omdat diezelfde trek omhoog hem tussen de pilaren soms laat vallen.
+
+De vorige versie gaf een bonus per overleefd frame. Onder die regel scoorde een agent die tien seconden ronddobberde en dan binnenkwam _hoger_ dan eentje die er meteen heen liep, en dat is precies wat hij deed. Nu leggen de beste agents de levels af in 504, 542 en 570 frames, oftewel rond de negen seconden speeltijd, en houden ze de rentoets vrijwel de hele run ingedrukt (top speed 2,5 px per frame, de volle `$28` uit de ROM).
 
 Een run stopt zodra hij **180 frames lang niet dichter bij het certificaat is gekomen**. De leveltimer zou in theorie ook kunnen aflopen, maar 400 eenheden is 9600 frames: veel te laat om nog iets te betekenen. Die stilstandsdetectie is ook wat het trainen sneller maakt, want hij snijdt de doelloze runs meteen af.
 
 Het genetisch algoritme draait op een **vaste seed** (mulberry32 in `src/agent/random.ts`), dus `npm run train-agent` levert twee keer exact dezelfde agent op. Daarvoor was het gokwerk: dezelfde opdracht gaf de ene keer zes oplossers op level 1 en de volgende keer nul, en wat er in de repo belandde was toevallig de laatste run.
 
-De opgeslagen gewichten _zijn_ de opname: de engine is deterministisch, dus een genome speelt altijd exact dezelfde run. Ze staan op vier decimalen, wat een tanh-netwerk niet merkt en het bestand van 390 kB naar 321 kB brengt (17 kB gzipped) terwijl er nu 100 in plaats van 60 generaties in zitten.
+De opgeslagen gewichten _zijn_ de opname: de engine is deterministisch, dus een genome speelt altijd exact dezelfde run. Ze staan op vier decimalen, wat een tanh-netwerk niet merkt en het bestand van 390 kB naar ongeveer 320 kB brengt (17 kB gzipped) terwijl er nu 100 in plaats van 60 generaties in zitten.
 
 Trainen gebeurt volledig headless en zo snel als de CPU kan, niet op speelsnelheid: de laatste run simuleerde 10,5 miljoen frames (bijna 49 uur speeltijd op 60fps) in 23,5 seconden, ruwweg 7.500× realtime. De trainer print die cijfers zelf aan het eind.
 
@@ -121,7 +125,7 @@ Na het aanpassen van levelgeometrie: `npm run train-agent` opnieuw draaien, ande
 
 Live op <https://reinierdevries.nl/certificaten/>, de AI-console op <https://reinierdevries.nl/certificaten/agent/replay.html>.
 
-`.github/workflows/build.yml` draait bij elke push en pull request op `master` lint, typecheck en de 126 tests, bouwt daarna, en pusht bij een push naar `master` de `dist/` naar de branch `github-pages`, waar Pages hem vandaan serveert.
+`.github/workflows/build.yml` draait bij elke push en pull request op `master` lint, typecheck en de 129 tests, bouwt daarna, en pusht bij een push naar `master` de `dist/` naar de branch `github-pages`, waar Pages hem vandaan serveert.
 
 ```
 npm run build:github-pages   # vite build --base=/certificaten/
@@ -130,6 +134,23 @@ npm run build:github-pages   # vite build --base=/certificaten/
 Een project-site wordt geserveerd vanaf `/<repo-naam>/`, dus de repo heet `certificaten` en `--base` moet daarmee overeenkomen. Beide pagina's zitten in de build (`vite.config.ts` noemt ze allebei als entry; zonder dat was de replay-viewer een dev-only pagina die stilzwijgend ontbrak in `dist/`).
 
 De trainingsdata is een gewone `import` van `src/agent/training-history.json`, dus Vite bakt hem bij het bouwen in de bundle: geen fetch, geen los asset-bestand, werkt op elke statische host (17 kB gzipped, en alleen opgehaald als je de console opent). Wat _niet_ kan op Pages: wegschrijven. `npm run train-agent` schrijft het bestand lokaal en je commit het; een trainer in de browser kan zijn resultaat alleen in het geheugen houden, in `localStorage` zetten of als download aanbieden.
+
+## Tekenen: één keer rasteren, daarna blitten
+
+Alles op het scherm is pixelkunst, en dat werd letterlijk pixel voor pixel getekend: `ctx.fillRect(x, y, 1, 1)` per lichtgevende pixel van elke letter, en bij sprites ook nog een `fillStyle` per pixel. Gemeten in Chromium:
+
+| scherm          | vóór                               | na                                 |
+| --------------- | ---------------------------------- | ---------------------------------- |
+| titelmenu       | 6.099 `fillRect`                   | 2 `fillRect` + 71 `drawImage`      |
+| dialoogbox      | 2.943                              | 2 + 33                             |
+| spelen          | 2.795 `fillRect` + 830 `fillStyle` | 29 `drawImage`                     |
+| alle generaties | 4.066 `fillRect` + 13.600 `lineTo` | 99 + 43 `drawImage` + 185 `lineTo` |
+
+Glyphs staan nu per kleur in één offscreen strip, spriteframes worden één keer gerasterd in beide richtingen, en de statische scène (lucht, wolken, platforms, certificaat) wordt per level één keer geschilderd waarna alleen de zichtbare strook geblit wordt. In de console tekenen de negenennegentig verliezende ghosts hun spoor één keer op een trail-canvas in plaats van elke frame hun hele geschiedenis opnieuw te strooken; de koploper wordt nog wel live getekend, want dat is één pad.
+
+Het beeld is hierbij bit voor bit gelijk gebleven: `Math.round(x + n)` is `Math.round(x) + n` voor gehele `n`, dus het afronden van de oorsprong van een glyph landt op dezelfde pixels als het afronden van elke pixel apart. Nagemeten door de canvasinhoud van beide versies op hetzelfde frame te vergelijken: nul verschillende pixels.
+
+Met **F** zet je een framerateteller aan, in het spel en in de console, zodat je op je eigen machine kunt zien wat het oplevert.
 
 ## Waarom het font is omgezet naar pixels
 
