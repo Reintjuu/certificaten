@@ -23,8 +23,10 @@ const controlsHint = document.querySelector<HTMLElement>("#controls")!;
 
 const RESTART_PROMPT = "DRUK OP R: OPNIEUW";
 
-const keys = new Set<string>();
-let prevKeys = new Set<string>();
+/** Down right now. */
+const heldKeys = new Set<string>();
+/** Keydowns since the last frame, drained by the loop. */
+const pressedKeys = new Set<string>();
 let state: GameState = createInitialState();
 let running = true;
 
@@ -37,13 +39,19 @@ addEventListener("keydown", (event) => {
   if (consumesKey(key)) {
     event.preventDefault();
   }
-  keys.add(key);
+  // The operating system repeats keydown while a key is held; that is not a
+  // new press, and counting it as one would re-trigger the jump on landing.
+  if (!event.repeat) {
+    pressedKeys.add(key);
+  }
+  heldKeys.add(key);
 });
-addEventListener("keyup", (event) => keys.delete(event.key.toLowerCase()));
+addEventListener("keyup", (event) => heldKeys.delete(event.key.toLowerCase()));
 // Without this, alt-tabbing away mid-run leaves the key "held" forever and
 // the player keeps walking after you come back.
 addEventListener("blur", () => {
-  keys.clear();
+  heldKeys.clear();
+  pressedKeys.clear();
 });
 
 function startGame(): void {
@@ -65,8 +73,8 @@ function openAgentConsole(): void {
       onExit: () => {
         controlsHint.hidden = false;
         state = createInitialState();
-        keys.clear();
-        prevKeys = new Set();
+        heldKeys.clear();
+        pressedKeys.clear();
         running = true;
         loop();
       },
@@ -193,7 +201,7 @@ function draw(state: GameState): void {
 
 /** On the title screen the same keys drive the menu instead of the player. */
 function advanceTitle(): void {
-  const menuInput = readMenuInput(keys, prevKeys);
+  const menuInput = readMenuInput(pressedKeys);
   if (menuInput.up) {
     titleMenu.moveBy(-1);
   }
@@ -215,10 +223,10 @@ function loop(): void {
   if (state.phase === "title") {
     advanceTitle();
   } else {
-    state = step(state, readInput(keys, prevKeys));
+    state = step(state, readInput(heldKeys, pressedKeys));
   }
   draw(state);
-  prevKeys = new Set(keys);
+  pressedKeys.clear();
   requestAnimationFrame(loop);
 }
 

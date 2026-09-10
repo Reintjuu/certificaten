@@ -28,6 +28,15 @@ export function drawFitnessChart(
   ctx.fillStyle = COLORS.background;
   ctx.fillRect(0, 0, width, height);
 
+  // The browser trainer draws every frame, including the first one, before a
+  // single generation has finished. There is nothing to plot yet, and the
+  // marker below would read past the end of an empty list.
+  if (generations.length === 0) {
+    drawLegend(ctx, height, 1);
+    return;
+  }
+  const marked = generations[Math.min(bestGeneration, generations.length - 1)];
+
   const xOf = (index: number): number =>
     generations.length === 1
       ? width / 2
@@ -71,7 +80,7 @@ export function drawFitnessChart(
 
   ctx.fillStyle = COLORS.marker;
   ctx.beginPath();
-  ctx.arc(xOf(bestGeneration), yOf(generations[bestGeneration].bestFitness), 4, 0, Math.PI * 2);
+  ctx.arc(xOf(bestGeneration), yOf(marked.bestFitness), 4, 0, Math.PI * 2);
   ctx.fill();
 
   drawLegend(ctx, height, maxSolved);

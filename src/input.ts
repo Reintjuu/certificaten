@@ -26,50 +26,42 @@ export function consumesKey(key: string): boolean {
   return GAME_KEYS.has(key.toLowerCase());
 }
 
-function anyHeld(current: ReadonlySet<string>, mapped: ReadonlySet<string>): boolean {
+function anyOf(keys: ReadonlySet<string>, mapped: ReadonlySet<string>): boolean {
   for (const key of mapped) {
-    if (current.has(key)) {
+    if (keys.has(key)) {
       return true;
     }
   }
   return false;
 }
 
-/** Held on this frame but not the previous one: the key's rising edge. */
-function anyPressed(
-  current: ReadonlySet<string>,
-  previous: ReadonlySet<string>,
-  mapped: ReadonlySet<string>
-): boolean {
-  for (const key of mapped) {
-    if (current.has(key) && !previous.has(key)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-export function readInput(current: ReadonlySet<string>, previous: ReadonlySet<string>): Input {
+/**
+ * `held` is what is down right now; `pressed` is every key whose keydown
+ * arrived since the last frame. They are two sets rather than this frame's
+ * and the previous frame's, because comparing snapshots loses a tap that
+ * starts and ends inside one frame: the key is never seen down at all.
+ */
+export function readInput(held: ReadonlySet<string>, pressed: ReadonlySet<string>): Input {
   return {
     ...NO_INPUT,
-    left: anyHeld(current, KEY_BINDINGS.left),
-    right: anyHeld(current, KEY_BINDINGS.right),
-    down: anyHeld(current, KEY_BINDINGS.down),
-    run: anyHeld(current, KEY_BINDINGS.run),
-    jumpHeld: anyHeld(current, KEY_BINDINGS.jump),
-    jumpPressed: anyPressed(current, previous, KEY_BINDINGS.jump),
-    confirmPressed: anyPressed(current, previous, KEY_BINDINGS.confirm),
-    resetPressed: anyPressed(current, previous, KEY_BINDINGS.reset),
+    left: anyOf(held, KEY_BINDINGS.left),
+    right: anyOf(held, KEY_BINDINGS.right),
+    down: anyOf(held, KEY_BINDINGS.down),
+    run: anyOf(held, KEY_BINDINGS.run),
+    jumpHeld: anyOf(held, KEY_BINDINGS.jump),
+    jumpPressed: anyOf(pressed, KEY_BINDINGS.jump),
+    confirmPressed: anyOf(pressed, KEY_BINDINGS.confirm),
+    resetPressed: anyOf(pressed, KEY_BINDINGS.reset),
   };
 }
 
 /** Menu navigation, which reads the same keys as movement but means something else. */
 export type MenuInput = { up: boolean; down: boolean; confirm: boolean };
 
-export function readMenuInput(current: ReadonlySet<string>, previous: ReadonlySet<string>): MenuInput {
+export function readMenuInput(pressed: ReadonlySet<string>): MenuInput {
   return {
-    up: anyPressed(current, previous, KEY_BINDINGS.menuUp),
-    down: anyPressed(current, previous, KEY_BINDINGS.menuDown),
-    confirm: anyPressed(current, previous, KEY_BINDINGS.confirm),
+    up: anyOf(pressed, KEY_BINDINGS.menuUp),
+    down: anyOf(pressed, KEY_BINDINGS.menuDown),
+    confirm: anyOf(pressed, KEY_BINDINGS.confirm),
   };
 }
