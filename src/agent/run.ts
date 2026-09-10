@@ -1,7 +1,15 @@
 // One definition of what a run is, when it ends and what it was worth.
 // The trainer scores runs with it and the console replays them with it, so a
 // ghost on screen stops exactly where the trainer stopped counting.
-import { LEVELS, createPlayingState, hasDied, hasFinishedLevel, step, type GameState } from "../engine";
+import {
+  CANVAS_H,
+  LEVELS,
+  createPlayingState,
+  hasDied,
+  hasFinishedLevel,
+  step,
+  type GameState,
+} from "../engine";
 import { actionFor, type Genome } from "./policy";
 
 /**
@@ -39,9 +47,23 @@ export type Run = {
   outcome: RunOutcome;
 };
 
+/**
+ * Distance to the certificate, with height measured against how much height
+ * there is rather than in raw pixels. A level is 1440 wide and 270 tall, so
+ * unweighted the horizontal term drowns the vertical one: on level 1, running
+ * right earned 1105 of the 1200 points available and the final climb, which
+ * is the only hard part, was worth 95. Agents duly learned to sprint right,
+ * pass under the certificate and pile into the wall. Scaling the vertical
+ * term by the same ratio is what normalising both axes comes to, while
+ * keeping the result in horizontal-equivalent pixels so the fitness scale and
+ * PROGRESS_EPSILON below still mean what they did.
+ */
 function distanceToCertificate(state: GameState, levelIndex: number): number {
-  const { x, y } = LEVELS[levelIndex].certificate;
-  return Math.hypot(x - state.player.x, y - state.player.y);
+  const level = LEVELS[levelIndex];
+  const verticalWeight = level.width / CANVAS_H;
+  const dx = level.certificate.x - state.player.x;
+  const dy = level.certificate.y - state.player.y;
+  return Math.hypot(dx, dy * verticalWeight);
 }
 
 export function startRun(levelIndex: number): Run {
