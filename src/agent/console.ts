@@ -11,24 +11,45 @@ import { drawText, drawTextCentered } from "../font";
 import { Menu } from "../menu";
 import { createFrameRate } from "../fps";
 import { drawFitnessChart } from "./chart";
-import { RunOutcome, advanceRun, startRun, type Run } from "./run";
-import { GENERATIONS, createTrainer, type GenerationRecord, type LevelHistory } from "./evolution";
+import { RunOutcome, advanceRun, finishRun, startRun, type Run } from "./run";
+import {
+  GENERATIONS,
+  checkHistory,
+  createTrainer,
+  type GenerationRecord,
+  type LevelHistory,
+  type TrainingHistory,
+} from "./evolution";
+import {
+  DEFAULT_ARCHITECTURE,
+  features,
+  forward,
+  genomeSize,
+  layoutOf,
+  outputsOf,
+  roundWeight,
+  type Architecture,
+  type Genome,
+} from "./policy";
+import { connectionAt, drawNetwork, drawWeightMap, type Connection } from "./network-view";
 
-type Screen = "menu" | "replay" | "training";
+type Screen = "menu" | "replay" | "training" | "weights";
 type Ghost = {
   record: GenerationRecord;
   index: number;
+  /** Usually the record's, but an edited weight replaces it. */
+  genome: Genome;
   run: Run;
   /** Only the leading ghost keeps its whole path; the rest paint into trails. */
   path: { x: number; y: number }[];
   lastPoint: { x: number; y: number } | null;
 };
 
-const shipped = trainingHistory;
+const shipped = checkHistory(trainingHistory);
 // Starts as the recording committed to the repo. Training in the browser
 // replaces it in memory only: a static host can't be written to, so keeping a
 // browser-trained result means downloading it and committing the file.
-let history: { levels: LevelHistory[] } = shipped;
+let history: TrainingHistory = shipped;
 
 const RESTART_DELAY_FRAMES = 90;
 const PATH_SAMPLE_EVERY = 2;
@@ -49,6 +70,15 @@ let running = false;
 
 const frameRate = createFrameRate();
 let showFrameRate = false;
+
+let networkCtx: CanvasRenderingContext2D | null = null;
+let networkCanvas: HTMLCanvasElement | null = null;
+let networkCaption: HTMLElement | null = null;
+let selected: Connection | null = null;
+/** A hand-edited copy of the best genome, replayed instead of the recorded one. */
+let editedGenome: Genome | null = null;
+/** Frames the recorded genome took, to compare an edit against. */
+let recordedFrames: number | null = null;
 
 let screen: Screen = "menu";
 let levelIndex = 0;
@@ -71,15 +101,31 @@ function generationColor(index: number, total: number): string {
 }
 
 function makeGhost(record: GenerationRecord, index: number): Ghost {
-  return { record, index, run: startRun(levelIndex), path: [], lastPoint: null };
+  const edited = index === levelHistory().bestGeneration ? editedGenome : null;
+  return {
+    record,
+    index,
+    genome: edited ?? record.genome,
+    run: startRun(levelIndex),
+    path: [],
+    lastPoint: null,
+  };
 }
 
 function isFinished(ghost: Ghost): boolean {
   return ghost.run.outcome !== RunOutcome.Running;
 }
 
+/** Edits belong to one genome, so moving to another one drops them. */
+function clearEdits(): void {
+  editedGenome = null;
+  selected = null;
+  recordedFrames = null;
+}
+
 function startReplay(level: number, generation: number, all: boolean): void {
   screen = "replay";
+  setNetworkCaption(NETWORK_CAPTION);
   levelIndex = level;
   generationIndex = generation;
   showAllGenerations = all;
@@ -93,11 +139,51 @@ function startReplay(level: number, generation: number, all: boolean): void {
   drawFitnessChart(chartCtx, generations, levelHistory().bestGeneration);
 }
 
-function startTraining(): void {
+function startTraining(architecture: Architecture = history.architecture): void {
   screen = "training";
   trainingLevel = 0;
-  trainers = LEVELS.map((_, index) => createTrainer(index));
+  trainers = LEVELS.map((_, index) => createTrainer(index, undefined, architecture));
   generationsEl.replaceChildren();
+}
+
+function startWeightMap(): void {
+  screen = "weights";
+  generationsEl.replaceChildren();
+  setNetworkCaption(WEIGHTS_CAPTION);
+}
+
+/**
+ * The answer to "what is actually saved": one cell per stored number, laid
+ * out the way the flat genome is packed.
+ */
+function drawWeights(): void {
+  const genome = shippedGenome();
+  const count = genomeSize(history.architecture);
+  const shape = [
+    history.architecture.inputs,
+    ...history.architecture.hidden,
+    history.architecture.outputs,
+  ].join(" x ");
+
+  ctx.fillStyle = COLORS.nightSky;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  drawTextCentered(ctx, "OPGESLAGEN GEWICHTEN", CANVAS_W / 2, 40, 1, COLORS.highlight);
+  drawTextCentered(ctx, `LEVEL ${levelIndex + 1}`, CANVAS_W / 2, 90, 1, COLORS.text);
+  drawTextCentered(ctx, `${count} GETALLEN`, CANVAS_W / 2, 130, 1, COLORS.text);
+  drawTextCentered(ctx, shape.toUpperCase(), CANVAS_W / 2, 170, 1, COLORS.dimText);
+  if (blinkTimer < BLINK_HALF) {
+    drawTextCentered(ctx, "ESCAPE VOOR HET MENU", CANVAS_W / 2, 220, 1, COLORS.faintText);
+  }
+
+  if (networkCtx !== null) {
+    drawWeightMap(networkCtx, genome, history.architecture);
+  }
+  statusEl.textContent =
+    `Elk vakje is een van de ${String(count)} getallen die per generatie worden bewaard: ` +
+    `een rij per knoop, een kolom per inkomende waarde, de bias als laatste kolom. ` +
+    `Geel is positief, blauw negatief. Dit is generatie ` +
+    `${String(levelHistory().generations[levelHistory().bestGeneration].generation)} van level ` +
+    `${String(levelIndex + 1)}.`;
 }
 
 function downloadHistory(): void {
@@ -114,6 +200,7 @@ const menu = new Menu("AI CONSOLE", [
     label: "BEKIJK BESTE RUN",
     hint: "BESTE GENERATIE, LEVEL 1",
     run: () => {
+      clearEdits();
       startReplay(0, history.levels[0].bestGeneration, false);
     },
   },
@@ -121,10 +208,22 @@ const menu = new Menu("AI CONSOLE", [
     label: "ALLE GENERATIES",
     hint: "ALLEMAAL TEGELIJK MET PAD",
     run: () => {
+      clearEdits();
       startReplay(0, history.levels[0].bestGeneration, true);
     },
   },
-  { label: "TRAIN OPNIEUW", hint: "IN DE BROWSER, EEN MINUUT", run: startTraining },
+  {
+    label: "TRAIN OPNIEUW",
+    hint: "IN DE BROWSER, EEN MINUUT",
+    run: () => {
+      startTraining();
+    },
+  },
+  {
+    label: "OPGESLAGEN GEWICHTEN",
+    hint: "WAT ER IN HET BESTAND STAAT",
+    run: startWeightMap,
+  },
   { label: "DOWNLOAD DATA", hint: "JSON OM TE COMMITTEN", run: downloadHistory },
   {
     label: "SPEEL ZELF",
@@ -147,6 +246,7 @@ function renderGenerationButtons(): void {
       button.textContent = `Level ${index + 1}`;
       button.className = index === levelIndex ? "active" : "";
       button.onclick = () => {
+        clearEdits();
         startReplay(index, history.levels[index].bestGeneration, showAllGenerations);
       };
       return button;
@@ -157,6 +257,7 @@ function renderGenerationButtons(): void {
       button.title = `beste fitness ${record.bestFitness.toFixed(1)}, ${record.solved} haalden het certificaat`;
       button.className = !showAllGenerations && index === generationIndex ? "active" : "";
       button.onclick = () => {
+        clearEdits();
         startReplay(levelIndex, index, false);
       };
       return button;
@@ -240,6 +341,27 @@ function replayCamera(): number {
   return Math.max(...ghosts.map((ghost) => ghost.run.state.cameraX));
 }
 
+/**
+ * The same forward pass the agent just made, shown as it happens. Weights say
+ * what the network could do; weight times activation says what it is doing.
+ */
+function drawNetworkFor(ghost: Ghost): void {
+  if (networkCtx === null) {
+    return;
+  }
+  const level = LEVELS[levelIndex];
+  const activations = forward(ghost.genome, features(ghost.run.state, level), history.architecture);
+  const [horizontal, jump, run] = outputsOf(activations);
+
+  drawNetwork(networkCtx, {
+    genome: ghost.genome,
+    architecture: history.architecture,
+    activations,
+    pressed: [Math.abs(horizontal) > 0.2, jump > 0, run > 0],
+    selected,
+  });
+}
+
 function drawReplay(): void {
   const cameraX = replayCamera();
   const bestIndex = levelHistory().bestGeneration;
@@ -267,6 +389,7 @@ function drawReplay(): void {
     }
     drawEntities(ctx, lead.run.state);
   });
+  drawNetworkFor(lead);
 
   if (showAllGenerations) {
     const reached = ghosts.filter((ghost) => ghost.run.outcome === RunOutcome.Solved).length;
@@ -279,9 +402,7 @@ function drawReplay(): void {
     const ghost = ghosts[0];
     drawText(ctx, `LEVEL ${levelIndex + 1} GEN ${ghost.record.generation}`, 6, 6, 1, COLORS.ink);
     drawText(ctx, `FRAME ${frame} ${OUTCOME_LABELS[ghost.run.outcome]}`, 6, 26, 1, COLORS.ink);
-    statusEl.textContent =
-      `Generatie ${ghost.record.generation}: beste fitness ${ghost.record.bestFitness.toFixed(1)}, ` +
-      `${ghost.record.solved} van de populatie haalde het certificaat. Escape voor het menu.`;
+    statusEl.textContent = replayStatus(ghost);
   }
 }
 
@@ -332,7 +453,11 @@ function drawTraining(): void {
 const TRAINING_BUDGET_MS = 10;
 
 function finishTraining(): void {
-  history = { levels: trainers.map((trainer) => trainer.toHistory()) };
+  clearEdits();
+  history = {
+    architecture: trainers[0].architecture,
+    levels: trainers.map((trainer) => trainer.toHistory()),
+  };
   startReplay(0, history.levels[0].bestGeneration, false);
 }
 
@@ -360,7 +485,7 @@ function advanceGhost(ghost: Ghost): void {
   }
   // Re-running the stored genome through the same deterministic engine
   // reproduces that generation's run exactly: the weights are the recording.
-  ghost.run = advanceRun(ghost.run, ghost.record.genome, levelIndex);
+  ghost.run = advanceRun(ghost.run, ghost.genome, levelIndex, history.architecture);
   if (frame % PATH_SAMPLE_EVERY !== 0) {
     return;
   }
@@ -370,6 +495,30 @@ function advanceGhost(ghost: Ghost): void {
     ghost.path.push(point);
   }
   extendTrail(ghost, point);
+}
+
+function replayStatus(lead: Ghost): string {
+  if (selected === null) {
+    return "Klik op een verbinding in het netwerk om het gewicht te zien en aan te passen.";
+  }
+  const layer = layoutOf(history.architecture)[selected.layer];
+  const index = layer.weight(selected.to, selected.from);
+  const value = lead.genome[index].toFixed(4);
+  const original = shippedGenome()[index].toFixed(4);
+  const comparison =
+    recordedFrames === null ? "" : ` De opname deed er ${String(recordedFrames)} frames over.`;
+  return (
+    `Gewicht ${String(index)} van ${String(genomeSize(history.architecture))}: ` +
+    `laag ${String(selected.layer + 1)}, van knoop ${String(selected.from + 1)} naar ${String(selected.to + 1)}. ` +
+    `Nu ${value}, opgenomen ${original}. Pijltjes omhoog en omlaag verschuiven het, Backspace zet het terug.` +
+    comparison
+  );
+}
+
+/** The recorded best genome for the level on screen, edits aside. */
+function shippedGenome(): Genome {
+  const level = history.levels[levelIndex];
+  return level.generations[level.bestGeneration].genome;
 }
 
 function advanceReplay(): void {
@@ -396,6 +545,7 @@ const CONSOLE_KEYS = new Set([
   ...MENU_SELECT_KEYS,
   ...MENU_BACK_KEYS,
   ...FRAME_RATE_KEYS,
+  "Backspace",
 ]);
 
 function onKeyDown(event: KeyboardEvent): void {
@@ -418,6 +568,16 @@ function onKeyDown(event: KeyboardEvent): void {
       leaveConsole?.();
     } else {
       toMenu();
+    }
+    return;
+  }
+  if (screen === "replay" && selected !== null) {
+    if (event.key === "ArrowUp") {
+      nudgeSelectedWeight(1);
+    } else if (event.key === "ArrowDown") {
+      nudgeSelectedWeight(-1);
+    } else if (event.key === "Backspace") {
+      resetEditedWeights();
     }
     return;
   }
@@ -465,6 +625,8 @@ function tick(): void {
   } else if (screen === "training") {
     advanceTraining();
     drawTraining();
+  } else if (screen === "weights") {
+    drawWeights();
   } else {
     advanceReplay();
     drawReplay();
@@ -478,24 +640,128 @@ function tick(): void {
 }
 
 /** The chrome the console needs beyond the canvas, built when it opens. */
+function buildCanvas(id: string, width: number, height: number): HTMLCanvasElement {
+  const element = document.createElement("canvas");
+  element.width = width;
+  element.height = height;
+  element.id = id;
+  return element;
+}
+
+const NETWORK_CAPTION = "Het netwerk: links wat het ziet, rechts wat het besluit.";
+const WEIGHTS_CAPTION = "De opgeslagen gewichten, per laag: een rij per knoop, de bias als laatste kolom.";
+
+function setNetworkCaption(text: string): void {
+  if (networkCaption !== null) {
+    networkCaption.textContent = text;
+  }
+}
+
+function buildCaption(text: string): HTMLElement {
+  const caption = document.createElement("h2");
+  caption.textContent = text;
+  return caption;
+}
+
+/** Lets you retrain with a different shape without leaving the page. */
+function buildArchitectureRow(): HTMLElement {
+  const row = document.createElement("div");
+  row.id = "architecture";
+
+  const label = document.createElement("label");
+  label.textContent = "verborgen lagen ";
+  const input = document.createElement("input");
+  input.id = "hidden-layers";
+  input.value = history.architecture.hidden.join(",");
+  input.size = 10;
+  label.append(input);
+
+  const train = document.createElement("button");
+  train.textContent = "train met deze vorm";
+  train.onclick = () => {
+    const hidden = parseHiddenLayers(input.value);
+    if (hidden === null) {
+      statusEl.textContent = `"${input.value}" is geen lijst positieve gehele getallen, bijvoorbeeld 8 of 12,6.`;
+      return;
+    }
+    startTraining({ ...DEFAULT_ARCHITECTURE, hidden });
+  };
+
+  row.append(label, train);
+  return row;
+}
+
+/** "8" or "12,6". Anything else is refused rather than half understood. */
+export function parseHiddenLayers(text: string): number[] | null {
+  const trimmed = text.trim();
+  if (trimmed === "") {
+    return [];
+  }
+  const parts = trimmed.split(",").map((part) => Number(part.trim()));
+  const valid = parts.every((size) => Number.isInteger(size) && size > 0 && size <= 64);
+  return valid ? parts : null;
+}
+
 function buildChrome(container: HTMLElement): void {
   statusEl = document.createElement("div");
   statusEl.id = "status";
 
-  const caption = document.createElement("h2");
-  caption.textContent = "Fitness per generatie (\u2605 = beste). Escape brengt je terug.";
-
-  const chartCanvas = document.createElement("canvas");
-  chartCanvas.width = 960;
-  chartCanvas.height = 180;
-  chartCanvas.id = "chart";
+  const chartCanvas = buildCanvas("chart", 960, 180);
   chartCtx = chartCanvas.getContext("2d")!;
+
+  networkCanvas = buildCanvas("network", 960, 380);
+  networkCtx = networkCanvas.getContext("2d");
+  networkCanvas.onclick = (event) => {
+    onNetworkClick(event);
+  };
 
   generationsEl = document.createElement("div");
   generationsEl.id = "generations";
 
-  container.replaceChildren(statusEl, caption, chartCanvas, generationsEl);
+  networkCaption = buildCaption(NETWORK_CAPTION);
+
+  container.replaceChildren(
+    statusEl,
+    buildCaption("Fitness per generatie (\u2605 = beste). Escape brengt je terug."),
+    chartCanvas,
+    generationsEl,
+    networkCaption,
+    networkCanvas,
+    buildArchitectureRow()
+  );
   container.hidden = false;
+}
+
+/** Canvas coordinates from a click, whatever the element is scaled to. */
+function onNetworkClick(event: MouseEvent): void {
+  if (networkCanvas === null || screen !== "replay" || showAllGenerations) {
+    return;
+  }
+  const bounds = networkCanvas.getBoundingClientRect();
+  const x = (event.clientX - bounds.left) * (networkCanvas.width / bounds.width);
+  const y = (event.clientY - bounds.top) * (networkCanvas.height / bounds.height);
+  selected = connectionAt(history.architecture, networkCanvas.width, networkCanvas.height, x, y);
+}
+
+const WEIGHT_STEP = 0.05;
+
+/** Nudges the selected weight and replays the run with it straight away. */
+function nudgeSelectedWeight(direction: number): void {
+  if (selected === null) {
+    return;
+  }
+  const recorded = shippedGenome();
+  recordedFrames ??= finishRun(recorded, levelIndex, history.architecture).frames;
+  const index = layoutOf(history.architecture)[selected.layer].weight(selected.to, selected.from);
+  const genome = [...(editedGenome ?? recorded)];
+  genome[index] = roundWeight(genome[index] + direction * WEIGHT_STEP);
+  editedGenome = genome;
+  startReplay(levelIndex, levelHistory().bestGeneration, false);
+}
+
+function resetEditedWeights(): void {
+  editedGenome = null;
+  startReplay(levelIndex, levelHistory().bestGeneration, false);
 }
 
 export type ConsoleOptions = {

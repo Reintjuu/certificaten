@@ -2,7 +2,14 @@
 // It hands out one candidate at a time rather than a whole generation, so the
 // page can fit training into the gaps between frames instead of blocking on a
 // generation for a quarter of a second at a time.
-import { randomGenome, roundWeight, type Genome } from "./policy";
+import {
+  DEFAULT_ARCHITECTURE,
+  genomeSize,
+  randomGenome,
+  roundWeight,
+  type Architecture,
+  type Genome,
+} from "./policy";
 import { createRandom, type Random } from "./random";
 import { RunOutcome, finishRun, fitnessOf } from "./run";
 
@@ -30,10 +37,38 @@ export type LevelHistory = {
   bestGeneration: number;
 };
 
+/** What training-history.json holds. */
+export type TrainingHistory = {
+  architecture: Architecture;
+  levels: LevelHistory[];
+};
+
+/**
+ * A recording only means anything alongside the shape it was trained for: the
+ * genome is a flat list of numbers, and the same list read as a different
+ * architecture is quietly a different network. Rather than let that happen,
+ * refuse it.
+ */
+export function checkHistory(history: TrainingHistory): TrainingHistory {
+  const expected = genomeSize(history.architecture);
+  for (const level of history.levels) {
+    for (const record of level.generations) {
+      if (record.genome.length !== expected) {
+        throw new Error(
+          `level ${level.level + 1} generation ${record.generation} stores ` +
+            `${record.genome.length} weights, but the recorded architecture needs ${expected}`
+        );
+      }
+    }
+  }
+  return history;
+}
+
 export type Evaluation = { fitness: number; solved: boolean; frames: number };
 
 export type Trainer = {
   levelIndex: number;
+  architecture: Architecture;
   generations: GenerationRecord[];
   readonly framesSimulated: number;
   readonly done: boolean;
@@ -45,8 +80,12 @@ export type Trainer = {
   toHistory: () => LevelHistory;
 };
 
-export function evaluate(genome: Genome, levelIndex: number): Evaluation {
-  const run = finishRun(genome, levelIndex);
+export function evaluate(
+  genome: Genome,
+  levelIndex: number,
+  architecture: Architecture = DEFAULT_ARCHITECTURE
+): Evaluation {
+  const run = finishRun(genome, levelIndex, architecture);
   return {
     fitness: fitnessOf(run),
     solved: run.outcome === RunOutcome.Solved,
@@ -99,9 +138,13 @@ export function bestGenerationOf(generations: GenerationRecord[]): number {
   );
 }
 
-export function createTrainer(levelIndex: number, seed = TRAINING_SEED + levelIndex): Trainer {
+export function createTrainer(
+  levelIndex: number,
+  seed = TRAINING_SEED + levelIndex,
+  architecture: Architecture = DEFAULT_ARCHITECTURE
+): Trainer {
   const random = createRandom(seed);
-  let population = Array.from({ length: POPULATION_SIZE }, () => randomGenome(random));
+  let population = Array.from({ length: POPULATION_SIZE }, () => randomGenome(random, architecture));
   let results: Evaluation[] = [];
   const generations: GenerationRecord[] = [];
   let framesSimulated = 0;
@@ -122,6 +165,7 @@ export function createTrainer(levelIndex: number, seed = TRAINING_SEED + levelIn
 
   return {
     levelIndex,
+    architecture,
     generations,
     get framesSimulated() {
       return framesSimulated;
@@ -133,7 +177,7 @@ export function createTrainer(levelIndex: number, seed = TRAINING_SEED + levelIn
       return results.length / POPULATION_SIZE;
     },
     evaluateNext(): boolean {
-      const evaluation = evaluate(population[results.length], levelIndex);
+      const evaluation = evaluate(population[results.length], levelIndex, architecture);
       results.push(evaluation);
       framesSimulated += evaluation.frames;
       if (results.length < POPULATION_SIZE) {

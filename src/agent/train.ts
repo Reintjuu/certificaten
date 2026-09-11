@@ -7,6 +7,7 @@
 import { writeFileSync } from "node:fs";
 import { LEVELS } from "../engine";
 import { GENERATIONS, POPULATION_SIZE, createTrainer, type LevelHistory } from "./evolution";
+import { DEFAULT_ARCHITECTURE } from "./policy";
 
 export type { GenerationRecord, LevelHistory } from "./evolution";
 
@@ -43,7 +44,7 @@ function main(): void {
   }
 
   const outPath = new URL("./training-history.json", import.meta.url);
-  writeFileSync(outPath, JSON.stringify({ levels }));
+  writeFileSync(outPath, JSON.stringify({ architecture: DEFAULT_ARCHITECTURE, levels }));
 
   // Training runs headless and as fast as the CPU allows: no canvas, no
   // waiting on frames. Worth stating plainly, because at 60fps this many

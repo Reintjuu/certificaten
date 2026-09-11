@@ -8,6 +8,7 @@ import {
   actionFor,
   features,
   forward,
+  outputsOf,
   randomGenome,
   type Genome,
 } from "../src/agent/policy";
@@ -39,7 +40,7 @@ describe("policy network", () => {
   test("outputs stay within tanh's range", () => {
     const state = createPlayingState(0);
     for (let i = 0; i < 50; i++) {
-      for (const output of forward(randomGenome(), features(state, LEVELS[0]))) {
+      for (const output of outputsOf(forward(randomGenome(), features(state, LEVELS[0])))) {
         assert.ok(output >= -1 && output <= 1, `output ${output} escaped the -1..1 range`);
       }
     }

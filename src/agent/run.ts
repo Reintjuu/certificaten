@@ -10,7 +10,7 @@ import {
   step,
   type GameState,
 } from "../engine";
-import { actionFor, type Genome } from "./policy";
+import { DEFAULT_ARCHITECTURE, actionFor, type Architecture, type Genome } from "./policy";
 
 /**
  * A hard ceiling on one attempt, in frames (30s at 60fps). Crossing a 1440px
@@ -91,11 +91,16 @@ function outcomeOf(run: Run): RunOutcome {
 }
 
 /** Advances a live run by a single frame. A finished run is returned as is. */
-export function advanceRun(run: Run, genome: Genome, levelIndex: number): Run {
+export function advanceRun(
+  run: Run,
+  genome: Genome,
+  levelIndex: number,
+  architecture: Architecture = DEFAULT_ARCHITECTURE
+): Run {
   if (run.outcome !== RunOutcome.Running) {
     return run;
   }
-  const state = step(run.state, actionFor(genome, run.state, LEVELS[levelIndex]));
+  const state = step(run.state, actionFor(genome, run.state, LEVELS[levelIndex], architecture));
   const distance = distanceToCertificate(state, levelIndex);
   const madeProgress = distance < run.closest - PROGRESS_EPSILON;
   const advanced: Run = {
@@ -108,10 +113,14 @@ export function advanceRun(run: Run, genome: Genome, levelIndex: number): Run {
   return { ...advanced, outcome: outcomeOf(advanced) };
 }
 
-export function finishRun(genome: Genome, levelIndex: number): Run {
+export function finishRun(
+  genome: Genome,
+  levelIndex: number,
+  architecture: Architecture = DEFAULT_ARCHITECTURE
+): Run {
   let run = startRun(levelIndex);
   while (run.outcome === RunOutcome.Running) {
-    run = advanceRun(run, genome, levelIndex);
+    run = advanceRun(run, genome, levelIndex, architecture);
   }
   return run;
 }
