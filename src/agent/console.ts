@@ -32,6 +32,7 @@ import {
   type Genome,
 } from "./policy";
 import { connectionAt, drawNetwork, drawWeightMap, type Connection } from "./network-view";
+import { createReinforceTrainer } from "./reinforce";
 
 type Screen = "menu" | "replay" | "training" | "weights";
 type Ghost = {
@@ -139,10 +140,20 @@ function startReplay(level: number, generation: number, all: boolean): void {
   drawFitnessChart(chartCtx, generations, levelHistory().bestGeneration);
 }
 
-function startTraining(architecture: Architecture = history.architecture): void {
+const TRAINING_METHODS = {
+  evolution: { label: "evolutie", create: createTrainer },
+  gradient: { label: "gradient (REINFORCE)", create: createReinforceTrainer },
+} as const;
+
+type Method = keyof typeof TRAINING_METHODS;
+
+let method: Method = "evolution";
+
+function startTraining(architecture: Architecture = history.architecture, chosen: Method = method): void {
   screen = "training";
+  method = chosen;
   trainingLevel = 0;
-  trainers = LEVELS.map((_, index) => createTrainer(index, undefined, architecture));
+  trainers = LEVELS.map((_, index) => TRAINING_METHODS[chosen].create(index, undefined, architecture));
   generationsEl.replaceChildren();
 }
 
@@ -423,6 +434,14 @@ function drawTraining(): void {
   ctx.fillStyle = COLORS.nightSky;
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   drawTextCentered(ctx, "AAN HET TRAINEN", CANVAS_W / 2, 50, 1, COLORS.highlight);
+  drawTextCentered(
+    ctx,
+    method === "evolution" ? "EVOLUTIE" : "GRADIENT",
+    CANVAS_W / 2,
+    72,
+    1,
+    COLORS.dimText
+  );
   drawTextCentered(ctx, `LEVEL ${trainingLevel + 1} VAN ${LEVELS.length}`, CANVAS_W / 2, 100, 1, COLORS.text);
   drawTextCentered(
     ctx,
@@ -676,6 +695,18 @@ function buildArchitectureRow(): HTMLElement {
   input.size = 10;
   label.append(input);
 
+  const methodLabel = document.createElement("label");
+  methodLabel.textContent = " leren met ";
+  const methodSelect = document.createElement("select");
+  methodSelect.id = "method";
+  for (const [value, entry] of Object.entries(TRAINING_METHODS)) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = entry.label;
+    methodSelect.append(option);
+  }
+  methodLabel.append(methodSelect);
+
   const train = document.createElement("button");
   train.textContent = "train met deze vorm";
   train.onclick = () => {
@@ -684,10 +715,10 @@ function buildArchitectureRow(): HTMLElement {
       statusEl.textContent = `"${input.value}" is geen lijst positieve gehele getallen, bijvoorbeeld 8 of 12,6.`;
       return;
     }
-    startTraining({ ...DEFAULT_ARCHITECTURE, hidden });
+    startTraining({ ...DEFAULT_ARCHITECTURE, hidden }, methodSelect.value as Method);
   };
 
-  row.append(label, train);
+  row.append(label, methodLabel, train);
   return row;
 }
 

@@ -95,18 +95,23 @@ export function randomGenome(random: Random = Math.random, architecture = DEFAUL
 }
 
 /**
- * Every layer's activations, inputs first and outputs last, rather than only
- * the outputs. The console draws exactly this, and the policy would otherwise
- * have to be run twice to show what it was thinking.
+ * Every layer's activations, inputs first and outputs last, along with the
+ * weighted sums they came from. The console draws the activations, and the
+ * gradient in reinforce.ts needs the sums; keeping one implementation means
+ * the two can never disagree about what the network computed.
  */
-export function forward(genome: Genome, inputs: number[], architecture = DEFAULT_ARCHITECTURE): number[][] {
+export type Pass = { sums: number[][]; activations: number[][] };
+
+export function forwardPass(genome: Genome, inputs: number[], architecture = DEFAULT_ARCHITECTURE): Pass {
   const sizes = layerSizes(architecture);
   const activations: number[][] = [inputs];
+  const sums: number[][] = [inputs];
   let index = 0;
 
   for (let layer = 1; layer < sizes.length; layer++) {
     const previous = activations[layer - 1];
     const from = sizes[layer - 1];
+    const layerSums = new Array<number>(sizes[layer]);
     const current = new Array<number>(sizes[layer]);
 
     for (let node = 0; node < sizes[layer]; node++) {
@@ -115,11 +120,17 @@ export function forward(genome: Genome, inputs: number[], architecture = DEFAULT
         sum += genome[index + i] * previous[i];
       }
       index += from + 1;
+      layerSums[node] = sum;
       current[node] = Math.tanh(sum);
     }
+    sums.push(layerSums);
     activations.push(current);
   }
-  return activations;
+  return { sums, activations };
+}
+
+export function forward(genome: Genome, inputs: number[], architecture = DEFAULT_ARCHITECTURE): number[][] {
+  return forwardPass(genome, inputs, architecture).activations;
 }
 
 export function outputsOf(activations: number[][]): number[] {
@@ -210,13 +221,10 @@ export function features(state: GameState, level: Level): number[] {
   ];
 }
 
-export function actionFor(
-  genome: Genome,
-  state: GameState,
-  level: Level,
-  architecture = DEFAULT_ARCHITECTURE
-): Input {
-  const [horizontal, jump, run] = outputsOf(forward(genome, features(state, level), architecture));
+/** How the three outputs become buttons. Shared, so both ways of training
+ * an agent drive the game identically. */
+export function inputFromOutputs(outputs: number[]): Input {
+  const [horizontal, jump, run] = outputs;
   const jumpHeld = jump > 0;
   return {
     left: horizontal < -MOVE_THRESHOLD,
@@ -231,4 +239,13 @@ export function actionFor(
     confirmPressed: false,
     resetPressed: false,
   };
+}
+
+export function actionFor(
+  genome: Genome,
+  state: GameState,
+  level: Level,
+  architecture = DEFAULT_ARCHITECTURE
+): Input {
+  return inputFromOutputs(outputsOf(forward(genome, features(state, level), architecture)));
 }

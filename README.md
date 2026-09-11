@@ -99,6 +99,23 @@ Trainen gebeurt volledig headless en zo snel als de CPU kan, niet op speelsnelhe
 
 In de browser scoort de trainer **één kandidaat per keer** in plaats van een hele generatie, met een budget van 10ms per frame. Een generatie is 80 runs en kost een paar honderd milliseconden; die tussen twee paints proppen liet de pagina bevriezen en de generatieteller stilstaan. Nu loopt er een voortgangsbalk binnen de generatie mee.
 
+### Twee manieren van leren, en waarom de ene wint
+
+Naast de evolutie zit er een **policy gradient** (REINFORCE) in `src/agent/reinforce.ts`: hetzelfde netwerk, dezelfde inputs, hetzelfde spel, maar in plaats van hele runs scoren en de winnaars kruisen duwt hij elk gewicht in de richting die de goede frames waarschijnlijker maakte. Kiesbaar onder de grafiek in de console.
+
+Hij wint niet, en dat is geen verrassing maar ook geen handwuiverij. De meting die het uitlegt:
+
+| gewicht met 0,01 verschuiven | verandert de uitkomst niet |
+| ---------------------------- | -------------------------- |
+| willekeurig genome           | 63 van de 131              |
+| getraind genome              | **131 van de 131**         |
+
+Bij een getraind genome verandert er van een stapje van 0,01 op wélk gewicht dan ook helemaal niets aan hoe de run afloopt; zelfs bij 0,1 geldt dat nog voor 90%. De reden is dat een knop een drempel is: `rechts` is `output > 0,2`, dus zolang die drempel niet wordt overschreden ziet het spel geen enkel verschil. De opbrengst als functie van de gewichten is een trap, geen helling. Een gradiënt heeft dan bijna niets om langs af te dalen, terwijl evolutie daar geen last van heeft omdat die met stappen van 0,6 muteert en gewoon houdt wat wint.
+
+Die eigenschap staat als test in `test/reinforce.test.ts`, samen met een numerieke controle van de backpropagatie tegen eindige differenties: de gradiënt is wel degelijk correct, hij heeft alleen weinig om beet te pakken.
+
+Onderweg zijn er twee fouten in gemaakt die het vermelden waard zijn, want beide zien er in code volkomen normaal uit. De eerste was een baseline over de hele episode aftrekken van een return-to-go die naar het eind toe krimpt, waardoor elk vroeg frame lof kreeg en elk laat frame blaam, ongeacht wat er gebeurde; dat is nu een baseline per framenummer. De tweede was ruis op de gewogen som in plaats van op de uitgang: zodra die som voorbij ongeveer twee groeit is tanh vlak, en dan zijn alle twintig episodes in een batch letterlijk identiek en ligt het leren stil.
+
 `validate-levels` is een snelle kanarie: hij simuleert per beurt zijn mogelijke sprongen tegen de echte engine en kiest de beste, in plaats van sprongafstanden uit vaste constanten te gokken. Daardoor blijft hij kloppen als de physics veranderen; de vorige, handmatig afgestelde versie werd waardeloos zodra de getallen verschoven. Kijkt drie zetten vooruit, wat nodig werd toen de terugstuiter naar `$fc` ging, en draait in een paar seconden. De uitgebreidere controle is de getrainde agent (`npm test` speelt de opgeslagen beste genome per level opnieuw af en eist dat die het certificaat haalt).
 
 ## Een level of sprite aanpassen

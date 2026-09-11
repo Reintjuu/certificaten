@@ -9,6 +9,7 @@ import {
   hasFinishedLevel,
   step,
   type GameState,
+  type Input,
 } from "../engine";
 import { DEFAULT_ARCHITECTURE, actionFor, type Architecture, type Genome } from "./policy";
 
@@ -58,7 +59,7 @@ export type Run = {
  * keeping the result in horizontal-equivalent pixels so the fitness scale and
  * PROGRESS_EPSILON below still mean what they did.
  */
-function distanceToCertificate(state: GameState, levelIndex: number): number {
+export function distanceToCertificate(state: GameState, levelIndex: number): number {
   const level = LEVELS[levelIndex];
   const verticalWeight = level.width / CANVAS_H;
   const dx = level.certificate.x - state.player.x;
@@ -90,17 +91,15 @@ function outcomeOf(run: Run): RunOutcome {
   return run.frames >= RUN_FRAME_BUDGET ? RunOutcome.OutOfTime : RunOutcome.Running;
 }
 
-/** Advances a live run by a single frame. A finished run is returned as is. */
-export function advanceRun(
-  run: Run,
-  genome: Genome,
-  levelIndex: number,
-  architecture: Architecture = DEFAULT_ARCHITECTURE
-): Run {
+/**
+ * Advances a live run by one frame with an action already chosen, so a trainer
+ * that samples its own actions still ends runs by exactly the same rules.
+ */
+export function stepRun(run: Run, input: Input, levelIndex: number): Run {
   if (run.outcome !== RunOutcome.Running) {
     return run;
   }
-  const state = step(run.state, actionFor(genome, run.state, LEVELS[levelIndex], architecture));
+  const state = step(run.state, input);
   const distance = distanceToCertificate(state, levelIndex);
   const madeProgress = distance < run.closest - PROGRESS_EPSILON;
   const advanced: Run = {
@@ -111,6 +110,19 @@ export function advanceRun(
     outcome: RunOutcome.Running,
   };
   return { ...advanced, outcome: outcomeOf(advanced) };
+}
+
+/** Advances a live run by a single frame. A finished run is returned as is. */
+export function advanceRun(
+  run: Run,
+  genome: Genome,
+  levelIndex: number,
+  architecture: Architecture = DEFAULT_ARCHITECTURE
+): Run {
+  if (run.outcome !== RunOutcome.Running) {
+    return run;
+  }
+  return stepRun(run, actionFor(genome, run.state, LEVELS[levelIndex], architecture), levelIndex);
 }
 
 export function finishRun(
