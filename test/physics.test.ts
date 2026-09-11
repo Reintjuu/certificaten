@@ -407,10 +407,10 @@ describe("moveEnemies", () => {
 });
 
 describe("resolveEnemyCollisions", () => {
-  test("dropping from above squashes and bounces", () => {
+  test("coming down on one squashes and bounces", () => {
     const target = enemy({ x: 100, y: 100 });
     const p = player({ x: 100, y: 100 - PHYSICS.playerSmallH + 4 });
-    const died = resolveEnemyCollisions(p, [target], 6, 100);
+    const died = resolveEnemyCollisions(p, [target], true);
 
     assert.equal(died, false);
     assert.equal(target.alive, false);
@@ -418,16 +418,54 @@ describe("resolveEnemyCollisions", () => {
     assert.equal(p.vy, PHYSICS.bounceVelocity);
   });
 
+  test("the bounce is the ROM's $fc, not $fd", () => {
+    // $fd belongs to bloobers and cheep-cheeps; a goomba goes through SBnce.
+    assert.equal(PHYSICS.bounceVelocity, -4);
+  });
+
   test("walking into one from the side is fatal", () => {
     const target = enemy({ x: 100, y: 100 });
     const p = player({ x: 95, y: 100 });
-    assert.equal(resolveEnemyCollisions(p, [target], 0, 124), true);
+    assert.equal(resolveEnemyCollisions(p, [target], false), true);
     assert.equal(target.alive, true);
   });
 
   test("an already squashed enemy is harmless", () => {
     const target = enemy({ x: 100, y: 100, alive: false });
     const p = player({ x: 100, y: 100 });
-    assert.equal(resolveEnemyCollisions(p, [target], 0, 124), false);
+    assert.equal(resolveEnemyCollisions(p, [target], false), false);
+  });
+
+  test("how deep the overlap is does not matter, only that you were falling", () => {
+    // Regression: an extra height test used to demand that the player's feet
+    // were still above the enemy's middle, which the ROM does not ask of a
+    // goomba. Deep overlaps then injured instead of stomping.
+    const target = enemy({ x: 100, y: 100 });
+    const p = player({ x: 100, y: 100 + 8, big: true });
+    assert.equal(resolveEnemyCollisions(p, [target], true), false);
+    assert.equal(target.alive, false);
+    assert.equal(p.big, true, "a stomp never costs you your size");
+  });
+
+  test("two enemies at once are both stomped", () => {
+    // ChkETmrs: StompTimer is already set by the first, so the second is a
+    // stomp as well. Without it, one enemy died and the other took your size.
+    const first = enemy({ x: 100, y: 100 });
+    const second = enemy({ x: 108, y: 100 });
+    const p = player({ x: 102, y: 100 - PHYSICS.playerSmallH + 4, big: true });
+
+    assert.equal(resolveEnemyCollisions(p, [first, second], true), false);
+    assert.equal(first.alive, false);
+    assert.equal(second.alive, false);
+    assert.equal(p.big, true);
+  });
+
+  test("the stomp timer keeps the next touch safe for a moment", () => {
+    const target = enemy({ x: 100, y: 100 });
+    const p = player({ x: 100, y: 100, big: true, stompTimer: 1 });
+
+    assert.equal(resolveEnemyCollisions(p, [target], false), false);
+    assert.equal(target.alive, false, "the timer makes even a side touch a stomp");
+    assert.equal(p.big, true);
   });
 });

@@ -22,8 +22,12 @@ import type { Level } from "../levels";
 
 const FRAME_BUDGET = 1800; // 30s at 60fps
 const HOP_BUDGET = 90; // how far ahead one candidate move is simulated
-/** Frames to keep the jump button held. 0 means "walk, don't jump". */
-const HOLD_OPTIONS = [0, 4, 8, 12, 16, 22, 28, 34, 40];
+/**
+ * Frames to keep the jump button held. 0 means "walk, don't jump". Six rungs
+ * rather than nine: at three moves deep the difference in what the bot finds
+ * is two frames across all three levels, and it runs in a third of the time.
+ */
+const HOLD_OPTIONS = [0, 6, 12, 20, 28, 40];
 const WALK_FRAMES = 12; // how long a "just walk" move commits for
 
 type Move = { inputs: Input[]; state: GameState };
@@ -71,29 +75,42 @@ function score(move: Move, level: Level): number {
 }
 
 /**
- * Looks two moves ahead. One is not enough: at a gap every jump from a
- * standstill scores worse than staying put, and backing up for a run-up
- * scores worse still, so a greedy bot parks itself at the edge forever.
+ * How many moves ahead to look. One is not enough: at a gap every jump from a
+ * standstill scores worse than staying put, and backing up for a run-up scores
+ * worse still, so a greedy bot parks itself at the edge forever. Two stopped
+ * being enough once the stomp bounce was corrected to the ROM's $fc, which
+ * throws the bot further after a stomp than it used to plan for.
  */
-function bestMove(state: GameState, level: Level, depth = 2): { move: Move; score: number } | null {
-  let best: { move: Move; score: number } | null = null;
+const LOOKAHEAD_MOVES = 3;
 
+type Candidate = { move: Move; score: number };
+
+function bestMove(state: GameState, level: Level, depth = LOOKAHEAD_MOVES): Candidate {
+  const candidates: Candidate[] = [];
   for (const dir of [1, -1] as const) {
     for (const hold of HOLD_OPTIONS) {
       const move = simulateMove(state, dir, hold);
-      let moveScore = score(move, level);
+      candidates.push({ move, score: score(move, level) });
+    }
+  }
+  candidates.sort((a, b) => a.score - b.score);
 
-      const worthExploring = depth > 1 && moveScore !== -Infinity && moveScore < DEATH_PENALTY;
-      if (worthExploring) {
-        const followUp = bestMove(move.state, level, depth - 1);
-        if (followUp) {
-          moveScore = Math.min(moveScore, followUp.score);
-        }
-      }
+  // Never empty: two directions times the hold options.
+  let best = candidates[0];
+  if (depth <= 1) {
+    return best;
+  }
 
-      if (!best || moveScore < best.score) {
-        best = { move, score: moveScore };
-      }
+  for (const candidate of candidates) {
+    if (candidate.score === -Infinity) {
+      return candidate;
+    }
+    if (candidate.score >= DEATH_PENALTY) {
+      continue;
+    }
+    const reachable = Math.min(candidate.score, bestMove(candidate.move.state, level, depth - 1).score);
+    if (reachable < best.score) {
+      best = { move: candidate.move, score: reachable };
     }
   }
   return best;
@@ -101,7 +118,7 @@ function bestMove(state: GameState, level: Level, depth = 2): { move: Move; scor
 
 type LevelResult = { ok: boolean; frames: number; reason?: string };
 
-function validateLevel(levelIndex: number): LevelResult {
+export function validateLevel(levelIndex: number): LevelResult {
   const level = LEVELS[levelIndex];
   let state = createPlayingState(levelIndex);
   let frames = 0;
@@ -117,7 +134,7 @@ function validateLevel(levelIndex: number): LevelResult {
 
     if (queued.length === 0) {
       const plan = bestMove(state, level);
-      if (!plan || plan.move.inputs.length === 0) {
+      if (plan.move.inputs.length === 0) {
         return { ok: false, frames, reason: "stuck" };
       }
       queued = plan.move.inputs;

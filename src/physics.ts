@@ -56,8 +56,13 @@ export const PHYSICS = {
   /** DiffToHaltJump: letting go within the first pixel doesn't cut the jump. */
   jumpCutGracePixels: 1,
 
-  /** EnemyStomped: a flat $fd, with no dependence on holding the button. */
-  bounceVelocity: 0xfd - 0x100,
+  /**
+   * A stomped goomba bounces you with $fc. Its ID ($06) is below $09, so
+   * EnemyStomped sends it through ChkForDemoteKoopa into HandleStompedShellE,
+   * which falls through to SBnce. The $fd on the EnemyStompedPts path belongs
+   * to bloobers, cheep-cheeps, bullet bills, hammer bros and lakitus.
+   */
+  bounceVelocity: 0xfc - 0x100,
 
   /** PlayerAnimTmrData: frames per step of the walk cycle, fastest first. */
   walkCycleFrames: [0x02, 0x04, 0x07],
@@ -125,6 +130,13 @@ export type Player = {
   crouching: boolean;
   /** InjuryTimer, counted in framerules like the ROM's. */
   invincibleFramerules: number;
+  /**
+   * StompTimer. While it runs, any enemy you touch is stomped rather than
+   * dangerous, which is what lets you bounce through a row of them. It sits
+   * at $0791, inside the frame timers, so it ticks down every frame and not
+   * once per framerule.
+   */
+  stompTimer: number;
 };
 
 export type Enemy = {
@@ -195,6 +207,7 @@ export function createPlayer(start: { x: number; y: number }): Player {
     big: false,
     crouching: false,
     invincibleFramerules: 0,
+    stompTimer: 0,
   };
 }
 
@@ -478,22 +491,31 @@ export function moveEnemies(enemies: Enemy[], level: Level, cameraX: number, fra
  * from before platform collision ran, so landing on a platform (which zeroes
  * vy and snaps y) can't hide that we were also dropping onto an enemy.
  */
-export function resolveEnemyCollisions(
-  p: Player,
-  enemies: Enemy[],
-  fallVy: number,
-  bottomBeforeFall: number
-): boolean {
+/**
+ * ChkForPlayerInjury decides this on Player_Y_Speed alone for a goomba: if you
+ * are on the way down you stomp, full stop. The comparison of positions that
+ * follows it only applies to enemies with an ID of at least Bloober ($07), and
+ * a goomba is $06. An extra height test here used to turn perfectly good
+ * stomps into injuries.
+ *
+ * `wasFalling` is that Y_Speed, translated. Our gravity is applied and then
+ * undone by the platform snap every frame, so a walking player technically has
+ * a downward speed; the ROM simply holds Player_Y_Speed at zero while standing,
+ * and being airborne at the start of the frame is what expresses that here.
+ */
+export function resolveEnemyCollisions(p: Player, enemies: Enemy[], wasFalling: boolean): boolean {
   for (const enemy of enemies) {
     if (!enemy.alive || !overlaps(p, enemy)) {
       continue;
     }
 
-    const cameFromAbove = fallVy > 0 && bottomBeforeFall <= enemy.y + enemy.h * 0.5;
-    if (cameFromAbove) {
+    // ChkETmrs: a stomp already landed this frame makes the next one a stomp
+    // too, which is why two enemies at once cannot cost you your size.
+    if (wasFalling || p.stompTimer > 0) {
       enemy.alive = false;
       enemy.squashTimer = PHYSICS.squashFramerules;
       p.vy = PHYSICS.bounceVelocity;
+      p.stompTimer++;
       continue;
     }
 
@@ -536,6 +558,10 @@ export function stepWorld(
   if (view.framerule && p.invincibleFramerules > 0) {
     p.invincibleFramerules--;
   }
+  if (p.stompTimer > 0) {
+    p.stompTimer--;
+  }
+  const wasAirborne = !p.grounded;
   p.crouching = p.big && p.grounded && input.down;
   resizePlayer(p);
 
@@ -545,8 +571,7 @@ export function stepWorld(
 
   p.x += p.vx;
   p.y += p.vy;
-  const fallVy = p.vy;
-  const bottomBeforeFall = p.y + p.h - fallVy;
+  const wasFalling = wasAirborne && p.vy > 0;
 
   resolvePlatformCollisions(p, level);
   // SMB1 never scrolls back, so the left edge of the view is a wall.
@@ -556,7 +581,7 @@ export function stepWorld(
   moveEnemies(enemies, level, view.cameraX, view.framerule);
   moveMushrooms(mushrooms, level, view.cameraX);
   collectMushrooms(p, mushrooms);
-  const hitByEnemy = resolveEnemyCollisions(p, enemies, fallVy, bottomBeforeFall);
+  const hitByEnemy = resolveEnemyCollisions(p, enemies, wasFalling);
   const fellOut = p.y > CANVAS_H + PHYSICS.deathFallMargin;
   return { died: hitByEnemy || fellOut };
 }
