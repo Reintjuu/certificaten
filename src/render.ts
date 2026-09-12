@@ -91,6 +91,11 @@ function sceneFor(level: Level): HTMLCanvasElement {
   return image;
 }
 
+/** The whole level as one image, for an overview that is not camera bound. */
+export function levelImage(level: Level): HTMLCanvasElement {
+  return sceneFor(level);
+}
+
 /**
  * Draws only the strip the camera is looking at. Called inside withCamera, so
  * a slice taken at level coordinate `left` lands at the left edge of the view.

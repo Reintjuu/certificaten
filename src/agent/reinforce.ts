@@ -22,8 +22,24 @@ import {
   type Genome,
 } from "./policy";
 import { createRandom, type Random } from "./random";
-import { RunOutcome, distanceToCertificate, fitnessOf, startRun, stepRun, type Run } from "./run";
-import { bestGenerationOf, type GenerationRecord, type LevelHistory, type Trainer } from "./evolution";
+import {
+  PATH_SAMPLE_EVERY,
+  RunOutcome,
+  distanceToCertificate,
+  fitnessOf,
+  pathPointOf,
+  startRun,
+  stepRun,
+  type Point,
+  type Run,
+} from "./run";
+import {
+  bestGenerationOf,
+  type GenerationRecord,
+  type LevelHistory,
+  type Trainer,
+  type TrainerOptions,
+} from "./evolution";
 
 /** Episodes per weight update. One episode's gradient is far too noisy. */
 export const EPISODES_PER_UPDATE = 20;
@@ -65,11 +81,13 @@ function playEpisode(
   genome: Genome,
   levelIndex: number,
   architecture: Architecture,
-  random: Random
+  random: Random,
+  path?: Point[]
 ): Episode {
   let run = startRun(levelIndex);
   const steps: Step[] = [];
   let distance = distanceToCertificate(run.state, levelIndex);
+  path?.push(pathPointOf(run));
 
   while (run.outcome === RunOutcome.Running) {
     const { sums, activations } = forwardPass(genome, features(run.state, LEVELS[levelIndex]), architecture);
@@ -77,6 +95,9 @@ function playEpisode(
     const sampled = means.map((mean) => Math.max(-1, Math.min(1, mean + gaussian(random) * EXPLORATION)));
 
     run = stepRun(run, inputFromOutputs(sampled), levelIndex);
+    if (path !== undefined && run.frames % PATH_SAMPLE_EVERY === 0) {
+      path.push(pathPointOf(run));
+    }
     const next = distanceToCertificate(run.state, levelIndex);
     // Dense on purpose: only paying out at the certificate leaves almost every
     // episode with nothing to learn from.
@@ -181,16 +202,14 @@ export function accumulate(
   }
 }
 
-export function createReinforceTrainer(
-  levelIndex: number,
-  seed = TRAINING_SEED + levelIndex,
-  architecture: Architecture = DEFAULT_ARCHITECTURE
-): Trainer {
+export function createReinforceTrainer(levelIndex: number, options: TrainerOptions = {}): Trainer {
+  const { seed = TRAINING_SEED + levelIndex, architecture = DEFAULT_ARCHITECTURE } = options;
   const random = createRandom(seed);
   let genome = randomGenome(random, architecture);
   const generations: GenerationRecord[] = [];
   let framesSimulated = 0;
   let batch: Episode[] = [];
+  let lastPath: Point[] = [];
 
   function applyBatch(): void {
     const gradient = new Array<number>(genomeSize(architecture)).fill(0);
@@ -225,6 +244,9 @@ export function createReinforceTrainer(
     levelIndex,
     architecture,
     generations,
+    get lastPath() {
+      return lastPath;
+    },
     get framesSimulated() {
       return framesSimulated;
     },
@@ -235,7 +257,14 @@ export function createReinforceTrainer(
       return batch.length / EPISODES_PER_UPDATE;
     },
     evaluateNext(): boolean {
-      const episode = playEpisode(genome, levelIndex, architecture, random);
+      lastPath = options.recordPaths === true ? [] : lastPath;
+      const episode = playEpisode(
+        genome,
+        levelIndex,
+        architecture,
+        random,
+        options.recordPaths === true ? lastPath : undefined
+      );
       framesSimulated += episode.frames;
       batch.push(episode);
       if (batch.length < EPISODES_PER_UPDATE) {

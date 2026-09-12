@@ -125,14 +125,34 @@ export function advanceRun(
   return stepRun(run, actionFor(genome, run.state, LEVELS[levelIndex], architecture), levelIndex);
 }
 
+export type Point = { x: number; y: number };
+
+/** Where the player was, sampled coarsely enough to be cheap to keep. */
+export const PATH_SAMPLE_EVERY = 4;
+
+export function pathPointOf(run: Run): Point {
+  const { player } = run.state;
+  return { x: player.x + player.w / 2, y: player.y + player.h / 2 };
+}
+
+/**
+ * Plays a genome out. Pass `path` and it is filled with where the player went,
+ * which is what lets the trainer show its work; leave it out and nothing is
+ * allocated, which is what the command line trainer wants.
+ */
 export function finishRun(
   genome: Genome,
   levelIndex: number,
-  architecture: Architecture = DEFAULT_ARCHITECTURE
+  architecture: Architecture = DEFAULT_ARCHITECTURE,
+  path?: Point[]
 ): Run {
   let run = startRun(levelIndex);
+  path?.push(pathPointOf(run));
   while (run.outcome === RunOutcome.Running) {
     run = advanceRun(run, genome, levelIndex, architecture);
+    if (path !== undefined && run.frames % PATH_SAMPLE_EVERY === 0) {
+      path.push(pathPointOf(run));
+    }
   }
   return run;
 }

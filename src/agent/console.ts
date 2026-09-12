@@ -6,18 +6,20 @@
 // pure engine and draws with the same renderer.
 import trainingHistory from "./training-history.json";
 import { CANVAS_H, CANVAS_W, LEVELS, type Level } from "../engine";
-import { COLORS, drawFrameRate, drawScene, drawEntities, withCamera } from "../render";
+import { COLORS, drawFrameRate, drawScene, drawEntities, levelImage, withCamera } from "../render";
 import { drawText, drawTextCentered } from "../font";
 import { Menu } from "../menu";
 import { createFrameRate } from "../fps";
 import { drawFitnessChart } from "./chart";
-import { RunOutcome, advanceRun, finishRun, startRun, type Run } from "./run";
+import { RunOutcome, advanceRun, finishRun, startRun, type Point, type Run } from "./run";
 import {
   GENERATIONS,
+  POPULATION_SIZE,
   checkHistory,
   createTrainer,
   type GenerationRecord,
   type LevelHistory,
+  type Trainer,
   type TrainingHistory,
 } from "./evolution";
 import {
@@ -66,7 +68,7 @@ let ctx!: CanvasRenderingContext2D;
 let chartCtx!: CanvasRenderingContext2D;
 let generationsEl!: HTMLDivElement;
 let statusEl!: HTMLDivElement;
-let leaveConsole: (() => void) | null = null;
+let leaveConsole: ((intent: ConsoleExit) => void) | null = null;
 let running = false;
 
 const frameRate = createFrameRate();
@@ -89,8 +91,10 @@ let frame = 0;
 let blinkTimer = 0;
 let restartCountdown = RESTART_DELAY_FRAMES;
 let ghosts: Ghost[] = [];
-let trainers: ReturnType<typeof createTrainer>[] = [];
+let trainers: Trainer[] = [];
 let trainingLevel = 0;
+/** How many candidates of the current generation are on the trail canvas. */
+let candidatesDrawn = 0;
 
 function levelHistory(): LevelHistory {
   return history.levels[levelIndex];
@@ -153,8 +157,12 @@ function startTraining(architecture: Architecture = history.architecture, chosen
   screen = "training";
   method = chosen;
   trainingLevel = 0;
-  trainers = LEVELS.map((_, index) => TRAINING_METHODS[chosen].create(index, undefined, architecture));
+  trainers = LEVELS.map((_, index) =>
+    TRAINING_METHODS[chosen].create(index, { architecture, recordPaths: true })
+  );
   generationsEl.replaceChildren();
+  overview = null;
+  candidatesDrawn = 0;
 }
 
 function startWeightMap(): void {
@@ -240,7 +248,7 @@ const menu = new Menu("AI CONSOLE", [
     label: "SPEEL ZELF",
     hint: "TERUG NAAR HET SPEL",
     run: () => {
-      leaveConsole?.();
+      leaveConsole?.("play");
     },
   },
 ]);
@@ -311,13 +319,13 @@ function extendTrail(ghost: Ghost, to: { x: number; y: number }): void {
   trailCtx.stroke();
 }
 
-function drawTrails(cameraX: number): void {
+function drawTrails(cameraX: number, alpha = FADED_TRAIL_ALPHA): void {
   if (trails === null) {
     return;
   }
   const left = Math.round(cameraX);
   const width = Math.min(CANVAS_W, trails.width - left);
-  ctx.globalAlpha = FADED_TRAIL_ALPHA;
+  ctx.globalAlpha = alpha;
   ctx.drawImage(trails, left, 0, width, CANVAS_H, left, 0, width, CANVAS_H);
   ctx.globalAlpha = 1;
 }
@@ -419,56 +427,125 @@ function drawReplay(): void {
 
 /** Shows movement within a generation, so a slow level still looks alive. */
 function drawProgressBar(progress: number): void {
-  const width = 240;
-  const x = (CANVAS_W - width) / 2;
+  const width = 160;
+  const x = CANVAS_W - width - 6;
   ctx.fillStyle = COLORS.selectedRow;
-  ctx.fillRect(x, 158, width, 8);
+  ctx.fillRect(x, 10, width, 8);
   ctx.fillStyle = COLORS.highlight;
-  ctx.fillRect(x, 158, Math.round(width * progress), 8);
+  ctx.fillRect(x, 10, Math.round(width * progress), 8);
+}
+
+const TRAINING_HEADER_HEIGHT = 52;
+const TRAINING_FOOTER_HEIGHT = 28;
+/** How much of the older generations' lines survive each new generation. */
+const TRAINING_TRAIL_FADE = 0.3;
+
+/**
+ * Two small canvases at overview size rather than one at level size: the level
+ * is 1440 wide and only 480 of it fits, and how far along a candidate gets is
+ * the whole point of the screen. Pre-scaling both means each frame is two
+ * one-to-one blits instead of two filtered ones, which is the difference
+ * between 52 and 60 frames a second here.
+ */
+type Overview = {
+  level: Level;
+  scale: number;
+  scene: HTMLCanvasElement;
+  trails: HTMLCanvasElement;
+  trailCtx: CanvasRenderingContext2D;
+};
+
+let overview: Overview | null = null;
+
+function overviewFor(level: Level): Overview {
+  if (overview?.level === level) {
+    return overview;
+  }
+  const scale = CANVAS_W / level.width;
+  const height = Math.round(CANVAS_H * scale);
+
+  const scene = document.createElement("canvas");
+  scene.width = CANVAS_W;
+  scene.height = height;
+  const sceneCtx = scene.getContext("2d")!;
+  sceneCtx.imageSmoothingEnabled = true;
+  sceneCtx.drawImage(levelImage(level), 0, 0, CANVAS_W, height);
+
+  const trails = document.createElement("canvas");
+  trails.width = CANVAS_W;
+  trails.height = height;
+
+  overview = { level, scale, scene, trails, trailCtx: trails.getContext("2d")! };
+  return overview;
+}
+
+/**
+ * Erases part of what is there instead of clearing it, so the last few
+ * generations stay faintly visible. Clearing outright strobed: a generation is
+ * eighty candidates and takes about a seventh of a second.
+ */
+function fadeOverviewTrails(): void {
+  const current = overviewFor(LEVELS[trainingLevel]);
+  current.trailCtx.globalCompositeOperation = "destination-out";
+  current.trailCtx.fillStyle = `rgba(0, 0, 0, ${TRAINING_TRAIL_FADE})`;
+  current.trailCtx.fillRect(0, 0, current.trails.width, current.trails.height);
+  current.trailCtx.globalCompositeOperation = "source-over";
+}
+
+/**
+ * A candidate is scored to completion in about a millisecond, so there is
+ * nothing to watch frame by frame; what there is to watch is the shape of the
+ * attempts, and how that shape moves from one generation to the next. Playing
+ * them at game speed instead would take ten seconds a generation, so a full
+ * run would be most of an hour rather than forty seconds.
+ */
+function drawCandidateTrails(): void {
+  const current = overviewFor(LEVELS[trainingLevel]);
+  const band = CANVAS_H - TRAINING_HEADER_HEIGHT - TRAINING_FOOTER_HEIGHT;
+  const top = TRAINING_HEADER_HEIGHT + (band - current.scene.height) / 2;
+  ctx.drawImage(current.scene, 0, top);
+  ctx.drawImage(current.trails, 0, top);
+}
+
+function drawTrainingHeader(trainer: Trainer): void {
+  const latest = trainer.generations.at(-1);
+  // Opaque, not the translucent shroud: the level's clouds showed through it
+  // as grey blocks between the letters.
+  ctx.fillStyle = COLORS.nightSky;
+  ctx.fillRect(0, 0, CANVAS_W, TRAINING_HEADER_HEIGHT);
+  ctx.fillRect(0, CANVAS_H - TRAINING_FOOTER_HEIGHT, CANVAS_W, TRAINING_FOOTER_HEIGHT);
+
+  drawText(ctx, method === "evolution" ? "EVOLUTIE" : "GRADIENT", 6, 6, 1, COLORS.highlight);
+  drawText(
+    ctx,
+    `L${trainingLevel + 1}/${LEVELS.length} GEN ${trainer.generations.length}/${GENERATIONS}`,
+    6,
+    28,
+    1,
+    COLORS.text
+  );
+  const solved = latest === undefined ? 0 : latest.solved;
+  drawText(ctx, `${solved} BINNEN`, CANVAS_W - 150, 28, 1, COLORS.dimText);
+  drawProgressBar(trainer.generationProgress);
+  if (blinkTimer < BLINK_HALF) {
+    drawText(ctx, "ESCAPE OM TE STOPPEN", 6, CANVAS_H - 22, 1, COLORS.faintText);
+  }
 }
 
 function drawTraining(): void {
   const trainer = trainers[trainingLevel];
-  const latest = trainer.generations.at(-1);
-
   ctx.fillStyle = COLORS.nightSky;
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  drawTextCentered(ctx, "AAN HET TRAINEN", CANVAS_W / 2, 50, 1, COLORS.highlight);
-  drawTextCentered(
-    ctx,
-    method === "evolution" ? "EVOLUTIE" : "GRADIENT",
-    CANVAS_W / 2,
-    72,
-    1,
-    COLORS.dimText
-  );
-  drawTextCentered(ctx, `LEVEL ${trainingLevel + 1} VAN ${LEVELS.length}`, CANVAS_W / 2, 100, 1, COLORS.text);
-  drawTextCentered(
-    ctx,
-    `GENERATIE ${trainer.generations.length} VAN ${GENERATIONS}`,
-    CANVAS_W / 2,
-    130,
-    1,
-    COLORS.text
-  );
-  drawProgressBar(trainer.generationProgress);
-  if (latest) {
-    drawTextCentered(ctx, `${latest.solved} HAALDEN HET`, CANVAS_W / 2, 185, 1, COLORS.dimText);
-  }
-  if (blinkTimer < BLINK_HALF) {
-    drawTextCentered(ctx, "ESCAPE OM TE STOPPEN", CANVAS_W / 2, 215, 1, COLORS.faintText);
-  }
+  drawCandidateTrails();
+  drawTrainingHeader(trainer);
 
   drawFitnessChart(chartCtx, trainer.generations, 0);
-  statusEl.textContent = `Trainen gebeurt hier in de browser; met "download data" bewaar je het resultaat.`;
+  statusEl.textContent =
+    `Elke lijn is een kandidaat die net is uitgespeeld, ${String(candidatesDrawn)} deze generatie. ` +
+    `Ze worden per stuk in ongeveer een milliseconde doorgerekend, dus je ziet hun vorm en niet hun beweging. ` +
+    `Met "download data" bewaar je het resultaat.`;
 }
 
-/**
- * How long training may hold the thread each frame. A whole generation is 80
- * runs and takes a few hundred milliseconds, which used to be done between two
- * paints: the page froze and the generation counter looked stuck. Scoring
- * candidates one at a time until the budget runs out keeps the frame alive.
- */
 const TRAINING_BUDGET_MS = 10;
 
 function finishTraining(): void {
@@ -480,14 +557,46 @@ function finishTraining(): void {
   startReplay(0, history.levels[0].bestGeneration, false);
 }
 
+/** One colour per candidate within a generation, cool to warm. */
+function candidateColor(index: number): string {
+  const share = Math.min(1, index / Math.max(1, POPULATION_SIZE - 1));
+  return `hsl(${210 - 160 * share}, 85%, ${45 + 15 * share}%)`;
+}
+
+function drawCandidate(path: readonly Point[], index: number): void {
+  if (path.length < 2) {
+    return;
+  }
+  const { trailCtx: into, scale } = overviewFor(LEVELS[trainingLevel]);
+  into.strokeStyle = candidateColor(index);
+  into.lineWidth = 1;
+  into.beginPath();
+  path.forEach((point, at) => {
+    const x = point.x * scale;
+    const y = point.y * scale;
+    if (at === 0) {
+      into.moveTo(x, y);
+    } else {
+      into.lineTo(x, y);
+    }
+  });
+  into.stroke();
+}
+
 function advanceTraining(): void {
   const deadline = performance.now() + TRAINING_BUDGET_MS;
   for (;;) {
     const trainer = trainers[trainingLevel];
     if (!trainer.done) {
-      trainer.evaluateNext();
+      const closed = trainer.evaluateNext();
+      drawCandidate(trainer.lastPath, candidatesDrawn);
+      candidatesDrawn = closed ? 0 : candidatesDrawn + 1;
+      if (closed) {
+        fadeOverviewTrails();
+      }
     } else if (trainingLevel + 1 < trainers.length) {
       trainingLevel++;
+      candidatesDrawn = 0;
     } else {
       finishTraining();
       return;
@@ -584,7 +693,7 @@ function onKeyDown(event: KeyboardEvent): void {
     // Escape backs out one step at a time: a screen returns to the menu, the
     // menu returns to the game.
     if (screen === "menu") {
-      leaveConsole?.();
+      leaveConsole?.("title");
     } else {
       toMenu();
     }
@@ -751,14 +860,16 @@ function buildChrome(container: HTMLElement): void {
 
   networkCaption = buildCaption(NETWORK_CAPTION);
 
+  // The training controls sit directly under the game rather than at the very
+  // bottom of the page, where the method dropdown was easy to miss entirely.
   container.replaceChildren(
     statusEl,
+    buildArchitectureRow(),
     buildCaption("Fitness per generatie (\u2605 = beste). Escape brengt je terug."),
     chartCanvas,
     generationsEl,
     networkCaption,
-    networkCanvas,
-    buildArchitectureRow()
+    networkCanvas
   );
   container.hidden = false;
 }
@@ -795,10 +906,16 @@ function resetEditedWeights(): void {
   startReplay(levelIndex, levelHistory().bestGeneration, false);
 }
 
+/**
+ * Escape backs out to the title screen, but the menu entry says "speel zelf"
+ * and has to mean it: landing on the title screen again is not playing.
+ */
+export type ConsoleExit = "title" | "play";
+
 export type ConsoleOptions = {
   canvas: HTMLCanvasElement;
   container: HTMLElement;
-  onExit: () => void;
+  onExit: (intent: ConsoleExit) => void;
 };
 
 /**
@@ -818,12 +935,12 @@ export function openConsole(options: ConsoleOptions): void {
   canvas.addEventListener("mousemove", onMouseMove, { signal });
   canvas.addEventListener("click", onClick, { signal });
 
-  leaveConsole = (): void => {
+  leaveConsole = (intent: ConsoleExit): void => {
     running = false;
     listeners.abort();
     options.container.replaceChildren();
     options.container.hidden = true;
-    options.onExit();
+    options.onExit(intent);
   };
 
   screen = "menu";

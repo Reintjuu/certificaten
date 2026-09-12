@@ -71,7 +71,7 @@ describe("what a run is worth", () => {
 describe("training", () => {
   test("the same seed produces the same run twice", () => {
     const run = (): number[] => {
-      const trainer = createTrainer(0, 12345);
+      const trainer = createTrainer(0, { seed: 12345 });
       for (let i = 0; i < 5; i++) {
         trainer.runGeneration();
       }
@@ -82,7 +82,7 @@ describe("training", () => {
 
   test("a generation is scored one candidate at a time", () => {
     // What keeps the browser responsive: the page can stop between candidates.
-    const trainer = createTrainer(0, 999);
+    const trainer = createTrainer(0, { seed: 999 });
     assert.equal(trainer.evaluateNext(), false, "one candidate cannot complete a generation");
     const progress = trainer.generationProgress;
     assert.ok(progress > 0 && progress < 1, `${progress} is not part-way through a generation`);

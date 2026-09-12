@@ -11,7 +11,7 @@ import {
   type Genome,
 } from "./policy";
 import { createRandom, type Random } from "./random";
-import { RunOutcome, finishRun, fitnessOf } from "./run";
+import { RunOutcome, finishRun, fitnessOf, type Point } from "./run";
 
 export const POPULATION_SIZE = 80;
 export const GENERATIONS = 100;
@@ -66,9 +66,25 @@ export function checkHistory(history: TrainingHistory): TrainingHistory {
 
 export type Evaluation = { fitness: number; solved: boolean; frames: number };
 
+/**
+ * Shared by every way of training an agent, so the console can swap one for
+ * another without knowing which it has.
+ */
+export type TrainerOptions = {
+  seed?: number;
+  architecture?: Architecture;
+  /** Keep the path of each candidate, for drawing. Off by default: the command
+   * line trainer plays millions of frames and does not want the garbage. */
+  recordPaths?: boolean;
+};
+
+export type TrainerFactory = (levelIndex: number, options?: TrainerOptions) => Trainer;
+
 export type Trainer = {
   levelIndex: number;
   architecture: Architecture;
+  /** The path of the candidate scored most recently, empty unless asked for. */
+  readonly lastPath: readonly Point[];
   generations: GenerationRecord[];
   readonly framesSimulated: number;
   readonly done: boolean;
@@ -83,9 +99,10 @@ export type Trainer = {
 export function evaluate(
   genome: Genome,
   levelIndex: number,
-  architecture: Architecture = DEFAULT_ARCHITECTURE
+  architecture: Architecture = DEFAULT_ARCHITECTURE,
+  path?: Point[]
 ): Evaluation {
-  const run = finishRun(genome, levelIndex, architecture);
+  const run = finishRun(genome, levelIndex, architecture, path);
   return {
     fitness: fitnessOf(run),
     solved: run.outcome === RunOutcome.Solved,
@@ -138,16 +155,14 @@ export function bestGenerationOf(generations: GenerationRecord[]): number {
   );
 }
 
-export function createTrainer(
-  levelIndex: number,
-  seed = TRAINING_SEED + levelIndex,
-  architecture: Architecture = DEFAULT_ARCHITECTURE
-): Trainer {
+export function createTrainer(levelIndex: number, options: TrainerOptions = {}): Trainer {
+  const { seed = TRAINING_SEED + levelIndex, architecture = DEFAULT_ARCHITECTURE } = options;
   const random = createRandom(seed);
   let population = Array.from({ length: POPULATION_SIZE }, () => randomGenome(random, architecture));
   let results: Evaluation[] = [];
   const generations: GenerationRecord[] = [];
   let framesSimulated = 0;
+  let lastPath: Point[] = [];
 
   function closeGeneration(): void {
     const fitnesses = results.map((result) => result.fitness);
@@ -167,6 +182,9 @@ export function createTrainer(
     levelIndex,
     architecture,
     generations,
+    get lastPath() {
+      return lastPath;
+    },
     get framesSimulated() {
       return framesSimulated;
     },
@@ -177,7 +195,13 @@ export function createTrainer(
       return results.length / POPULATION_SIZE;
     },
     evaluateNext(): boolean {
-      const evaluation = evaluate(population[results.length], levelIndex, architecture);
+      lastPath = options.recordPaths === true ? [] : lastPath;
+      const evaluation = evaluate(
+        population[results.length],
+        levelIndex,
+        architecture,
+        options.recordPaths === true ? lastPath : undefined
+      );
       results.push(evaluation);
       framesSimulated += evaluation.frames;
       if (results.length < POPULATION_SIZE) {

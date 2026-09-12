@@ -27,6 +27,28 @@ const TRIANGLE_DOWN_GLYPH = [
   '0000000000000000',
 ]
 
+// A slash, also hand-authored: the recreation this set came from has no
+// forward slash, and the AI console writes level and generation counters as
+// "1/3" and "64/100".
+const SLASH_GLYPH = [
+  '0000000000000000',
+  '0000000011110000',
+  '0000000011110000',
+  '0000000111100000',
+  '0000001111000000',
+  '0000001111000000',
+  '0000011110000000',
+  '0000111100000000',
+  '0000111100000000',
+  '0001111000000000',
+  '0011110000000000',
+  '0011110000000000',
+  '0111100000000000',
+  '0111100000000000',
+  '0000000000000000',
+  '0000000000000000',
+]
+
 const TRIANGLE_RIGHT_GLYPH = [
   '0000000000000000',
   '0000000000000000',
@@ -48,6 +70,7 @@ const TRIANGLE_RIGHT_GLYPH = [
 
 export const GLYPHS: Record<string, string[] | undefined> = {
   ' ': BLANK_GLYPH,
+  '/': SLASH_GLYPH,
   '▶': TRIANGLE_RIGHT_GLYPH,
   '▼': TRIANGLE_DOWN_GLYPH,
   'A': [

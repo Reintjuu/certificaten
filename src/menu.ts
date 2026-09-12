@@ -22,6 +22,11 @@ export class Menu {
     private readonly subtitle?: string
   ) {}
 
+  /** Back to the first row, so a screen you return to looks the same as ever. */
+  reset(): void {
+    this.selected = 0;
+  }
+
   moveBy(delta: number): void {
     const count = this.items.length;
     this.selected = (this.selected + delta + count) % count;

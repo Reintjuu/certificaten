@@ -77,12 +77,16 @@ function openAgentConsole(): void {
     openConsole({
       canvas,
       container: consoleContainer,
-      onExit: () => {
+      onExit: (intent) => {
         controlsHint.hidden = false;
         state = createInitialState();
         heldKeys.clear();
         pressedKeys.clear();
         running = true;
+        titleMenu.reset();
+        if (intent === "play") {
+          startGame();
+        }
         loop();
       },
     });
