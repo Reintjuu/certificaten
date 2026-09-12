@@ -105,7 +105,17 @@ In de browser scoort de trainer **één kandidaat per keer** in plaats van een h
 
 Naast de evolutie zit er een **policy gradient** (REINFORCE) in `src/agent/reinforce.ts`: hetzelfde netwerk, dezelfde inputs, hetzelfde spel, maar in plaats van hele runs scoren en de winnaars kruisen duwt hij elk gewicht in de richting die de goede frames waarschijnlijker maakte. Kiesbaar onder de grafiek in de console.
 
-Hij wint niet, en dat is geen verrassing maar ook geen handwuiverij. De meting die het uitlegt:
+Hij wint niet. Sterker nog, hij leert vrijwel niets, en dat is het eerlijke resultaat van de vraag "is dit het waard":
+
+| level | hebzuchtige fitness bij update 1 | beste over 100 updates | waar hij strandt                 |
+| ----- | -------------------------------- | ---------------------- | -------------------------------- |
+| 1     | −1182                            | −1182                  | altijd dezelfde vijand, op x=233 |
+| 2     | −992                             | −674 (update 89)       | eindigt weer op −992             |
+| 3     | −1211                            | −1191                  | zakt naar −1488                  |
+
+Belangrijk bij het lezen van die grafiek: een generatie wordt gescoord met de policy **zonder** verkenningsruis, want dat is de agent die het opgeslagen genome beschrijft. Dat was eerst niet zo, en dat maakte het beeld onwaar: de grafiek meldde een opgelost level zodra de ruis een keer geluk had, terwijl de agent zelf nog steeds tegen dezelfde vijand aanliep. Een test eist nu van beide leermethodes dat een opgeslagen genome zijn eigen opgeslagen fitness reproduceert.
+
+De meting die uitlegt waarom het niet werkt:
 
 | gewicht met 0,01 verschuiven | verandert de uitkomst niet |
 | ---------------------------- | -------------------------- |

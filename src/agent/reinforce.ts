@@ -26,6 +26,7 @@ import {
   PATH_SAMPLE_EVERY,
   RunOutcome,
   distanceToCertificate,
+  finishRun,
   fitnessOf,
   pathPointOf,
   startRun,
@@ -229,12 +230,20 @@ export function createReinforceTrainer(levelIndex: number, options: TrainerOptio
     const scale = LEARNING_RATE / Math.max(1, steps);
     genome = genome.map((weight, index) => roundWeight(weight + scale * gradient[index]));
 
-    const fitnesses = batch.map(({ run }) => fitnessOf(run));
+    // Scored by the policy without its exploration noise, because that is the
+    // agent the genome below actually describes. Recording the best sampled
+    // episode instead made the chart claim a solved level whenever the noise
+    // got lucky, while the stored genome walked into the same enemy as ever.
+    const greedy = finishRun(genome, levelIndex, architecture);
+    const sampled = batch.map(({ run }) => fitnessOf(run));
+
     generations.push({
       generation: generations.length + 1,
-      bestFitness: Math.max(...fitnesses),
-      meanFitness: fitnesses.reduce((sum, value) => sum + value, 0) / fitnesses.length,
-      solved: batch.filter(({ run }) => run.outcome === RunOutcome.Solved).length,
+      bestFitness: fitnessOf(greedy),
+      meanFitness: sampled.reduce((sum, value) => sum + value, 0) / sampled.length,
+      // Also the greedy policy, for the same reason: a generation record has
+      // to describe one agent, not a mix of the agent and its lucky samples.
+      solved: greedy.outcome === RunOutcome.Solved ? 1 : 0,
       genome: [...genome],
     });
     batch = [];

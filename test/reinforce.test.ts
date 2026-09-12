@@ -8,7 +8,9 @@ import {
   type Architecture,
   type Genome,
 } from "../src/agent/policy";
-import { EXPLORATION, accumulate, type Step } from "../src/agent/reinforce";
+import { EXPLORATION, accumulate, createReinforceTrainer, type Step } from "../src/agent/reinforce";
+import { createTrainer } from "../src/agent/evolution";
+import { fitnessOf } from "../src/agent/run";
 import { createRandom } from "../src/agent/random";
 import { DEFAULT_ARCHITECTURE, GENOME_SIZE } from "../src/agent/policy";
 import { finishRun } from "../src/agent/run";
@@ -114,4 +116,33 @@ describe("why evolution wins here", () => {
         "landscape is smoother than the comment above claims"
     );
   });
+});
+
+describe("what a recorded generation claims", () => {
+  // The bug this pins down: the gradient trainer stored the current weights
+  // but recorded the best *sampled* episode's fitness. The stored genome plays
+  // without exploration noise and so could never reproduce that number, which
+  // made the chart report a solved level whenever the noise got lucky while
+  // the agent itself still walked into the first enemy. Both trainers must be
+  // able to stand behind the number they record.
+  for (const [name, create] of [
+    ["evolution", createTrainer],
+    ["gradient", createReinforceTrainer],
+  ] as const) {
+    test(`${name}: every genome reproduces its own recorded fitness`, () => {
+      const trainer = create(0, { seed: 99 });
+      for (let i = 0; i < 3; i++) {
+        trainer.runGeneration();
+      }
+
+      for (const record of trainer.generations) {
+        const replayed = fitnessOf(finishRun(record.genome, 0, trainer.architecture));
+        assert.ok(
+          Math.abs(replayed - record.bestFitness) < 1e-6,
+          `generation ${record.generation} recorded ${record.bestFitness.toFixed(2)} but its ` +
+            `genome replays at ${replayed.toFixed(2)}`
+        );
+      }
+    });
+  }
 });
