@@ -43,7 +43,7 @@ describe("the policy gradient", () => {
 
     const { sums, activations } = forwardPass(genome, inputs, architecture);
     const sampled = activations[activations.length - 1].map((mean) => mean + (random() * 2 - 1) * 0.3);
-    const step: Step = { sums, activations, sampled, reward: 0 };
+    const step: Step = { sums, activations, sampled };
 
     const analytic = new Array<number>(genomeSize(architecture)).fill(0);
     accumulate(analytic, genome, step, 1, architecture);
@@ -72,7 +72,7 @@ describe("the policy gradient", () => {
     const sampled = activations[activations.length - 1].map((mean) => mean + 0.3);
 
     const gradient = new Array<number>(genomeSize(architecture)).fill(0);
-    accumulate(gradient, genome, { sums, activations, sampled, reward: 0 }, 1, architecture);
+    accumulate(gradient, genome, { sums, activations, sampled }, 1, architecture);
 
     assert.equal(gradient.length, genomeSize(architecture));
     assert.ok(

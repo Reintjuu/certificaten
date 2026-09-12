@@ -105,28 +105,34 @@ In de browser scoort de trainer **één kandidaat per keer** in plaats van een h
 
 Naast de evolutie zit er een **policy gradient** (REINFORCE) in `src/agent/reinforce.ts`: hetzelfde netwerk, dezelfde inputs, hetzelfde spel, maar in plaats van hele runs scoren en de winnaars kruisen duwt hij elk gewicht in de richting die de goede frames waarschijnlijker maakte. Kiesbaar onder de grafiek in de console.
 
-Hij wint niet. Sterker nog, hij leert vrijwel niets, en dat is het eerlijke resultaat van de vraag "is dit het waard":
+Hij leert wel, maar hij wint niet, en de weg daarnaartoe was leerzamer dan het resultaat.
 
-| level | hebzuchtige fitness bij update 1 | beste over 100 updates | waar hij strandt                 |
-| ----- | -------------------------------- | ---------------------- | -------------------------------- |
-| 1     | −1182                            | −1182                  | altijd dezelfde vijand, op x=233 |
-| 2     | −992                             | −674 (update 89)       | eindigt weer op −992             |
-| 3     | −1211                            | −1191                  | zakt naar −1488                  |
+| level | hebzuchtige fitness bij de eerste update | beste over 100 updates | opgelost |
+| ----- | ---------------------------------------- | ---------------------- | -------- |
+| 1     | −1237                                    | **−273** (update 47)   | nooit    |
+| 2     | −518                                     | **−167** (update 61)   | nooit    |
+| 3     | −1488                                    | **−661** (update 16)   | nooit    |
 
-Belangrijk bij het lezen van die grafiek: een generatie wordt gescoord met de policy **zonder** verkenningsruis, want dat is de agent die het opgeslagen genome beschrijft. Dat was eerst niet zo, en dat maakte het beeld onwaar: de grafiek meldde een opgelost level zodra de ruis een keer geluk had, terwijl de agent zelf nog steeds tegen dezelfde vijand aanliep. Een test eist nu van beide leermethodes dat een opgeslagen genome zijn eigen opgeslagen fitness reproduceert.
+Ter ijking: recht onder het certificaat staan is ongeveer −618 op level 1, en erbovenop −112. Hij komt dus ruim voorbij de eerste vijand en het grootste deel van het level door, maar maakt de laatste klim niet af. De curve is grillig: hij vindt een goede policy en loopt er daarna weer vanaf, wat bij REINFORCE hoort. De opname bewaart de beste, dus "bekijk beste run" laat wel zien wat hij op zijn best kon.
 
-De meting die uitlegt waarom het niet werkt:
+Belangrijk bij het lezen van die grafiek: een generatie wordt gescoord met de policy **zonder** verkenningsruis, want dat is de agent die het opgeslagen genome beschrijft. Dat was eerst niet zo, en dat maakte het beeld onwaar: de grafiek meldde een opgelost level zodra de ruis een keer geluk had, terwijl de agent zelf nog tegen dezelfde vijand aanliep. Een test eist nu van beide leermethodes dat een opgeslagen genome zijn eigen opgeslagen fitness reproduceert.
+
+Eerst leerde hij helemaal niets: level 1 bleef honderd updates lang op −1182 staan, wat neerkomt op doodgaan bij de eerste vijand op x=233. Mijn eerste verklaring was dat de verkenning het level niet genoeg afzocht. Die verklaring was fout, en dat bleek uit een meting: met dezelfde ruisinstellingen komt **259 van de 400 episodes voorbij die vijand**, is de mediaan x=541 en haalt de verste x=1424. Er was volop variatie en er waren volop goede episodes; de gradiënt gebruikte ze alleen niet.
+
+Het zat in de credit assignment. De beloning was "afstand die dit frame is goedgemaakt", en de return-to-go vanaf frame _t_ telescopeert daarmee tot "de vooruitgang die nog volgt". Die is _kleiner_ naarmate je al verder bent, en een baseline per framenummer haalt dat er niet uit. Een episode werd dus bestraft voor het al gemaakt hebben van vooruitgang. Nu krijgt elke episode één advantage, op precies de schaal waarop de evolutie ook wordt gescoord, zodat beide methodes hetzelfde optimaliseren en hun curves te vergelijken zijn. Daarbij loopt de stapgrootte af naar 15%, want met een vaste stap vond hij een goede policy en liep er daarna even hard weer vanaf.
+
+Wat er overblijft is waarom hij het laatste stuk niet haalt, en dat is wél de trap:
 
 | gewicht met 0,01 verschuiven | verandert de uitkomst niet |
 | ---------------------------- | -------------------------- |
 | willekeurig genome           | 63 van de 131              |
 | getraind genome              | **131 van de 131**         |
 
-Bij een getraind genome verandert er van een stapje van 0,01 op wélk gewicht dan ook helemaal niets aan hoe de run afloopt; zelfs bij 0,1 geldt dat nog voor 90%. De reden is dat een knop een drempel is: `rechts` is `output > 0,2`, dus zolang die drempel niet wordt overschreden ziet het spel geen enkel verschil. De opbrengst als functie van de gewichten is een trap, geen helling. Een gradiënt heeft dan bijna niets om langs af te dalen, terwijl evolutie daar geen last van heeft omdat die met stappen van 0,6 muteert en gewoon houdt wat wint.
+Bij een getraind genome verandert er van een stapje van 0,01 op wélk gewicht dan ook niets aan hoe de run afloopt; zelfs bij 0,1 geldt dat nog voor 90%. Een knop is namelijk een drempel: `rechts` is `output > 0,2`, dus zolang die niet wordt overschreden ziet het spel geen verschil. Voor het grove werk (naar rechts, over een vijand heen) is er genoeg spreiding tussen episodes om een richting uit te halen; voor de precieze laatste sprong is de opbrengst een trap en geen helling, en daar loopt een gradiënt vast waar evolutie gewoon de gelukkige mutatie bewaart.
 
-Die eigenschap staat als test in `test/reinforce.test.ts`, samen met een numerieke controle van de backpropagatie tegen eindige differenties: de gradiënt is wel degelijk correct, hij heeft alleen weinig om beet te pakken.
+Die eigenschap staat als test in `test/reinforce.test.ts`, samen met een numerieke controle van de backpropagatie tegen eindige differenties. De gradiënt is dus aantoonbaar correct; het ging mis in wat ik hem te eten gaf.
 
-Onderweg zijn er twee fouten in gemaakt die het vermelden waard zijn, want beide zien er in code volkomen normaal uit. De eerste was een baseline over de hele episode aftrekken van een return-to-go die naar het eind toe krimpt, waardoor elk vroeg frame lof kreeg en elk laat frame blaam, ongeacht wat er gebeurde; dat is nu een baseline per framenummer. De tweede was ruis op de gewogen som in plaats van op de uitgang: zodra die som voorbij ongeveer twee groeit is tanh vlak, en dan zijn alle twintig episodes in een batch letterlijk identiek en ligt het leren stil.
+Drie fouten onderweg, alle drie in code die volkomen normaal leest. Ruis op de gewogen som in plaats van op de uitgang: zodra die som voorbij ongeveer twee komt is tanh vlak en zijn alle episodes in een batch letterlijk identiek. Een baseline per framenummer onder een return-to-go die telescopeert, waardoor vooruitgang zichzelf bestrafte. En de gesamplede beste episode opslaan naast het hebzuchtige genome, waardoor de grafiek voortgang meldde die de agent niet had.
 
 `validate-levels` is een snelle kanarie: hij simuleert per beurt zijn mogelijke sprongen tegen de echte engine en kiest de beste, in plaats van sprongafstanden uit vaste constanten te gokken. Daardoor blijft hij kloppen als de physics veranderen; de vorige, handmatig afgestelde versie werd waardeloos zodra de getallen verschoven. Kijkt drie zetten vooruit, wat nodig werd toen de terugstuiter naar `$fc` ging, en draait in een paar seconden. De uitgebreidere controle is de getrainde agent (`npm test` speelt de opgeslagen beste genome per level opnieuw af en eist dat die het certificaat haalt).
 

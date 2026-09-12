@@ -25,7 +25,6 @@ import { createRandom, type Random } from "./random";
 import {
   PATH_SAMPLE_EVERY,
   RunOutcome,
-  distanceToCertificate,
   finishRun,
   fitnessOf,
   pathPointOf,
@@ -43,12 +42,14 @@ import {
 } from "./evolution";
 
 /** Episodes per weight update. One episode's gradient is far too noisy. */
-const EPISODES_PER_UPDATE = 20;
+const EPISODES_PER_UPDATE = 40;
 /** Updates per level, matching the evolution's generation count so the two
  * learning curves can be read on one chart. */
 const UPDATES = 100;
 
-const LEARNING_RATE = 8;
+const LEARNING_RATE = 3;
+/** What the step size decays to by the last update. */
+const LEARNING_RATE_FLOOR = 0.15;
 /**
  * Spread of the noise added to the outputs when acting. It goes on the tanh'd
  * output rather than the sum behind it: once a sum grows past about two, tanh
@@ -56,10 +57,13 @@ const LEARNING_RATE = 8;
  * batch came out identical and learning stopped dead.
  */
 export const EXPLORATION = 0.4;
-const DISCOUNT = 0.99;
-/** Terminal rewards, on the same scale as the per frame progress reward. */
-const SOLVE_REWARD = 400;
-const DEATH_REWARD = -100;
+
+/**
+ * How many frames one draw of exploration noise is held for. Redrawing it
+ * every frame produces jitter rather than behaviour: the agent never holds a
+ * jump or sustains a run, so the episodes it samples are not the kinds of
+ * episode it needs to discover.
+ */
 const TRAINING_SEED = 20260911;
 
 export type Step = {
@@ -67,7 +71,6 @@ export type Step = {
   sums: number[][];
   /** What was actually sampled at the output layer. */
   sampled: number[];
-  reward: number;
 };
 
 type Episode = { steps: Step[]; run: Run; frames: number };
@@ -87,7 +90,6 @@ function playEpisode(
 ): Episode {
   let run = startRun(levelIndex);
   const steps: Step[] = [];
-  let distance = distanceToCertificate(run.state, levelIndex);
   path?.push(pathPointOf(run));
 
   while (run.outcome === RunOutcome.Running) {
@@ -99,56 +101,24 @@ function playEpisode(
     if (path !== undefined && run.frames % PATH_SAMPLE_EVERY === 0) {
       path.push(pathPointOf(run));
     }
-    const next = distanceToCertificate(run.state, levelIndex);
-    // Dense on purpose: only paying out at the certificate leaves almost every
-    // episode with nothing to learn from.
-    steps.push({ activations, sums, sampled, reward: distance - next });
-    distance = next;
+    steps.push({ activations, sums, sampled });
   }
 
-  // A run always takes at least one step, so there is always a last one to
-  // hang the outcome on.
-  if (steps.length > 0) {
-    const last = steps[steps.length - 1];
-    last.reward += run.outcome === RunOutcome.Solved ? SOLVE_REWARD : 0;
-    last.reward += run.outcome === RunOutcome.Died ? DEATH_REWARD : 0;
-  }
   return { steps, run, frames: run.frames };
 }
 
-/** Discounted return from each step to the end of its episode. */
-function returnsToGo(steps: Step[]): number[] {
-  const returns = new Array<number>(steps.length);
-  let running = 0;
-  for (let i = steps.length - 1; i >= 0; i--) {
-    running = steps[i].reward + DISCOUNT * running;
-    returns[i] = running;
-  }
-  return returns;
-}
-
 /**
- * Advantages, against a baseline taken per frame number rather than per
- * episode. A return-to-go shrinks towards the end of a run, so subtracting one
- * number from the whole episode would praise every early frame and blame every
- * late one whatever was done in them. Comparing frame 40 only against other
- * frame 40s takes that out. Without a value network this is the honest way to
- * get a baseline, and it costs one pass over the batch.
+ * How good the episode was, on exactly the scale the evolution is scored on, so
+ * the two methods are optimising the same thing and their curves compare.
+ *
+ * Not a per frame return-to-go, which is what this used to do. With a reward
+ * of "distance closed this frame", the return from frame t telescopes into
+ * "the progress still to come", which is smaller the further along you already
+ * are. Subtracting a baseline taken per frame number cannot remove that, so an
+ * episode was penalised for having got somewhere, which is backwards.
  */
-function advantagesFor(episodes: number[][]): number[][] {
-  const longest = Math.max(...episodes.map((returns) => returns.length), 0);
-  const means = new Array<number>(longest).fill(0);
-  const spreads = new Array<number>(longest).fill(1);
-
-  for (let frame = 0; frame < longest; frame++) {
-    const atFrame = episodes.filter((returns) => frame < returns.length).map((returns) => returns[frame]);
-    const mean = atFrame.reduce((sum, value) => sum + value, 0) / atFrame.length;
-    const variance = atFrame.reduce((sum, value) => sum + (value - mean) ** 2, 0) / atFrame.length;
-    means[frame] = mean;
-    spreads[frame] = Math.sqrt(variance) || 1;
-  }
-
-  return episodes.map((returns) => returns.map((value, frame) => (value - means[frame]) / spreads[frame]));
+function episodeReturn(run: Run): number {
+  return fitnessOf(run);
 }
 
 /**
@@ -212,22 +182,35 @@ export function createReinforceTrainer(levelIndex: number, options: TrainerOptio
   let batch: Episode[] = [];
   let lastPath: Point[] = [];
 
+  /**
+   * The step size winds down over the run. A fixed one finds a good policy and
+   * then walks off it again: the late updates are as large as the early ones,
+   * and with an advantage this noisy that is enough to undo the progress.
+   */
+  function learningRateFactor(): number {
+    const progress = generations.length / UPDATES;
+    return 1 - (1 - LEARNING_RATE_FLOOR) * progress;
+  }
+
   function applyBatch(): void {
     const gradient = new Array<number>(genomeSize(architecture)).fill(0);
-    const returns = batch.map(({ steps }) => returnsToGo(steps));
-    const advantages = advantagesFor(returns);
+    const returns = batch.map(({ run }) => episodeReturn(run));
+    const mean = returns.reduce((sum, value) => sum + value, 0) / returns.length;
+    const spread =
+      Math.sqrt(returns.reduce((sum, value) => sum + (value - mean) ** 2, 0) / returns.length) || 1;
 
     batch.forEach((episode, index) => {
-      episode.steps.forEach((step, frame) => {
-        accumulate(gradient, genome, step, advantages[index][frame], architecture);
-      });
+      const advantage = (returns[index] - mean) / spread;
+      for (const step of episode.steps) {
+        accumulate(gradient, genome, step, advantage, architecture);
+      }
     });
 
     // Averaged over frames, not episodes. The gradient is a sum over every
     // step in the batch, some six thousand of them, so dividing by the twenty
     // episodes left an update large enough to blow the weights out in one go.
     const steps = batch.reduce((total, episode) => total + episode.steps.length, 0);
-    const scale = LEARNING_RATE / Math.max(1, steps);
+    const scale = (LEARNING_RATE * learningRateFactor()) / Math.max(1, steps);
     genome = genome.map((weight, index) => roundWeight(weight + scale * gradient[index]));
 
     // Scored by the policy without its exploration noise, because that is the
@@ -235,12 +218,10 @@ export function createReinforceTrainer(levelIndex: number, options: TrainerOptio
     // episode instead made the chart claim a solved level whenever the noise
     // got lucky, while the stored genome walked into the same enemy as ever.
     const greedy = finishRun(genome, levelIndex, architecture);
-    const sampled = batch.map(({ run }) => fitnessOf(run));
-
     generations.push({
       generation: generations.length + 1,
       bestFitness: fitnessOf(greedy),
-      meanFitness: sampled.reduce((sum, value) => sum + value, 0) / sampled.length,
+      meanFitness: mean,
       // Also the greedy policy, for the same reason: a generation record has
       // to describe one agent, not a mix of the agent and its lucky samples.
       solved: greedy.outcome === RunOutcome.Solved ? 1 : 0,
