@@ -212,12 +212,12 @@ export function createPlayer(start: { x: number; y: number }): Player {
 }
 
 /** Height depends on size, and crouching makes big Mario small again. */
-export function playerHeightOf(player: { big: boolean; crouching: boolean }): number {
+function playerHeightOf(player: { big: boolean; crouching: boolean }): number {
   return player.big && !player.crouching ? PHYSICS.playerH : PHYSICS.playerSmallH;
 }
 
 /** Resizes around the feet, so growing lifts the head rather than sinking. */
-export function resizePlayer(p: Player): void {
+function resizePlayer(p: Player): void {
   const height = playerHeightOf(p);
   if (height === p.h) {
     return;
@@ -251,7 +251,7 @@ export function createMushrooms(definitions: { x: number; y: number }[]): Mushro
 }
 
 /** Mushrooms walk and fall exactly like the enemies do. */
-export function moveMushrooms(mushrooms: Mushroom[], level: Level, cameraX: number): void {
+function moveMushrooms(mushrooms: Mushroom[], level: Level, cameraX: number): void {
   for (const mushroom of mushrooms) {
     if (mushroom.taken) {
       continue;
@@ -535,7 +535,7 @@ export function resolveEnemyCollisions(p: Player, enemies: Enemy[], wasFalling: 
   return false;
 }
 
-export function collectMushrooms(p: Player, mushrooms: Mushroom[]): void {
+function collectMushrooms(p: Player, mushrooms: Mushroom[]): void {
   for (const mushroom of mushrooms) {
     if (mushroom.taken || !overlaps(p, mushroom)) {
       continue;

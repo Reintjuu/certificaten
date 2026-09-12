@@ -13,7 +13,7 @@ export const PLAYER_SIZE = { w: 16, h: 24 } as const;
 export const SMALL_PLAYER_SIZE = { w: 16, h: 16 } as const;
 export const MUSHROOM_SIZE = { w: 16, h: 16 } as const;
 export const ENEMY_SIZE = { w: 16, h: 16 } as const;
-export const CERTIFICATE_SIZE = { w: 18, h: 24 } as const;
+const CERTIFICATE_SIZE = { w: 18, h: 24 } as const;
 
 const DEFAULT_PLATFORM_THICKNESS = 12;
 const CERTIFICATE_HOVER_ABOVE_PLATFORM = 13;

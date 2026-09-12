@@ -78,11 +78,15 @@ export type TrainerOptions = {
   recordPaths?: boolean;
 };
 
-export type TrainerFactory = (levelIndex: number, options?: TrainerOptions) => Trainer;
-
 export type Trainer = {
   levelIndex: number;
   architecture: Architecture;
+  /**
+   * How many generations this method runs. The console shows it, and reading
+   * it from the trainer rather than from the evolution's own constant is what
+   * keeps that counter honest when another method is selected.
+   */
+  totalGenerations: number;
   /** The path of the candidate scored most recently, empty unless asked for. */
   readonly lastPath: readonly Point[];
   generations: GenerationRecord[];
@@ -181,6 +185,7 @@ export function createTrainer(levelIndex: number, options: TrainerOptions = {}):
   return {
     levelIndex,
     architecture,
+    totalGenerations: GENERATIONS,
     generations,
     get lastPath() {
       return lastPath;

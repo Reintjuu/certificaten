@@ -118,7 +118,7 @@ function bestMove(state: GameState, level: Level, depth = LOOKAHEAD_MOVES): Cand
 
 type LevelResult = { ok: boolean; frames: number; reason?: string };
 
-export function validateLevel(levelIndex: number): LevelResult {
+function validateLevel(levelIndex: number): LevelResult {
   const level = LEVELS[levelIndex];
   let state = createPlayingState(levelIndex);
   let frames = 0;

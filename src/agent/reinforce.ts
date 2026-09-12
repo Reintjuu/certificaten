@@ -42,10 +42,10 @@ import {
 } from "./evolution";
 
 /** Episodes per weight update. One episode's gradient is far too noisy. */
-export const EPISODES_PER_UPDATE = 20;
+const EPISODES_PER_UPDATE = 20;
 /** Updates per level, matching the evolution's generation count so the two
  * learning curves can be read on one chart. */
-export const UPDATES = 100;
+const UPDATES = 100;
 
 const LEARNING_RATE = 8;
 /**
@@ -243,6 +243,7 @@ export function createReinforceTrainer(levelIndex: number, options: TrainerOptio
   return {
     levelIndex,
     architecture,
+    totalGenerations: UPDATES,
     generations,
     get lastPath() {
       return lastPath;
