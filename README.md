@@ -53,6 +53,8 @@ Twee details die vaak verkeerd worden nagemaakt: SMB1 varieert de spronghoogte d
 | `src/agent/`                    | De test- en AI-tooling. Eigen map met een eigen richting: hij importeert de engine, de levels en de renderer, maar niets in `src/` importeert ooit iets uit `src/agent/`, behalve de lazy import van de console.            |
 | `test/`                         | Unit tests (Node's ingebouwde test runner, geen extra framework), inclusief controles op leveldata en pixel-art: niets zweeft, vijanden lopen niet van hun platform, sprites zijn rechthoekig en even groot als hun hitbox. |
 
+Binnen `src/agent/` heeft elk bestand één taak: `run.ts` bepaalt wanneer een run stopt en wat hij opleverde, `policy.ts` is het netwerk, `evolution.ts` en `reinforce.ts` zijn de twee leermethodes, `training-view.ts` is één trainingssessie plus zijn scherm, `network-view.ts` tekent het netwerk, `chart.ts` de leercurve, en `console.ts` kiest alleen nog wat je bekijkt.
+
 Er is één entry point: `index.html`. Het titelscherm heeft twee regels, **speel** en **AI console**, en die tweede doet een dynamische import. Daardoor kost de AI-kant niets zolang je hem niet opent: het spel is 39 kB (10 kB gzipped), de console met alle trainingsdata erin 331 kB (21 kB gzipped) en die wordt pas opgehaald als je hem kiest.
 
 ## Agent-tooling
@@ -66,7 +68,7 @@ Beide zijn ook zonder terminal te doen: kies **AI console** op het titelscherm. 
 
 - **Bekijk beste run**: de beste generatie speelt het level uit;
 - **Alle generaties**: alle 100 lopen naast elkaar als gekleurde ghosts (blauw = vroegste, geel = laatste) met hun afgelegde pad, zodat je in één beeld ziet hoe het leren verliep;
-- **Train opnieuw**: draait de hele evolutie in de browser met een live grafiek;
+- **Train opnieuw**: draait de evolutie in de browser en laat het hele level in overzicht zien met de sprongbogen van elke kandidaat erover, zodat je de zoektocht ziet verlopen. Onder het spel kies je de verborgen lagen en de leermethode;
 - **Download data**: het resultaat als JSON, om in de repo te committen;
 - **Speel zelf**: terug naar het spel.
 

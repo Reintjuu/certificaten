@@ -38,6 +38,9 @@ export const COLORS = {
   chartLabel: "#999999",
 } as const;
 
+/** The gap text and bars keep from the edge of the view. */
+export const SCREEN_MARGIN = 6;
+
 /** Everything in the world is drawn in level coordinates, shifted by the camera. */
 export function withCamera(ctx: CanvasRenderingContext2D, cameraX: number, draw: () => void): void {
   ctx.save();

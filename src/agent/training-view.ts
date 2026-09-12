@@ -2,7 +2,7 @@
 // so that file is about choosing what to look at rather than about running an
 // evolution: this owns the trainers, the budget, and the drawing.
 import { CANVAS_H, CANVAS_W, LEVELS, type Level } from "../engine";
-import { COLORS, levelImage } from "../render";
+import { COLORS, SCREEN_MARGIN, levelImage } from "../render";
 import { drawText } from "../font";
 import { POPULATION_SIZE, type Trainer, type TrainerOptions } from "./evolution";
 import type { Architecture } from "./policy";
@@ -111,7 +111,7 @@ export function startTrainingSession(
   }
 
   function drawProgressBar(ctx: CanvasRenderingContext2D, progress: number): void {
-    const x = CANVAS_W - PROGRESS_BAR_WIDTH - 6;
+    const x = CANVAS_W - PROGRESS_BAR_WIDTH - SCREEN_MARGIN;
     ctx.fillStyle = COLORS.selectedRow;
     ctx.fillRect(x, 10, PROGRESS_BAR_WIDTH, 8);
     ctx.fillStyle = COLORS.highlight;
@@ -164,11 +164,11 @@ export function startTrainingSession(
       ctx.fillRect(0, 0, CANVAS_W, HEADER_HEIGHT);
       ctx.fillRect(0, CANVAS_H - FOOTER_HEIGHT, CANVAS_W, FOOTER_HEIGHT);
 
-      drawText(ctx, methodLabel, 6, 6, 1, COLORS.highlight);
+      drawText(ctx, methodLabel, SCREEN_MARGIN, SCREEN_MARGIN, 1, COLORS.highlight);
       drawText(
         ctx,
         `L${level + 1}/${LEVELS.length} GEN ${trainer.generations.length}/${trainer.totalGenerations}`,
-        6,
+        SCREEN_MARGIN,
         28,
         1,
         COLORS.text
@@ -184,7 +184,7 @@ export function startTrainingSession(
       );
       drawProgressBar(ctx, trainer.generationProgress);
       if (showHint) {
-        drawText(ctx, "ESCAPE OM TE STOPPEN", 6, CANVAS_H - 22, 1, COLORS.faintText);
+        drawText(ctx, "ESCAPE OM TE STOPPEN", SCREEN_MARGIN, CANVAS_H - 22, 1, COLORS.faintText);
       }
     },
 

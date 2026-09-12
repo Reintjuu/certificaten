@@ -6,7 +6,7 @@
 // pure engine and draws with the same renderer.
 import trainingHistory from "./training-history.json";
 import { CANVAS_H, CANVAS_W, LEVELS, type Level } from "../engine";
-import { COLORS, drawFrameRate, drawScene, drawEntities, withCamera } from "../render";
+import { COLORS, SCREEN_MARGIN, drawFrameRate, drawScene, drawEntities, withCamera } from "../render";
 import { drawText, drawTextCentered } from "../font";
 import { Menu } from "../menu";
 import { createFrameRate } from "../fps";
@@ -404,15 +404,22 @@ function drawReplay(): void {
 
   if (showAllGenerations) {
     const reached = ghosts.filter((ghost) => ghost.run.outcome === RunOutcome.Solved).length;
-    drawText(ctx, `ALLE ${ghosts.length} GENERATIES`, 6, 6, 1, COLORS.ink);
-    drawText(ctx, `FRAME ${frame} ${reached} BINNEN`, 6, 26, 1, COLORS.ink);
+    drawText(ctx, `ALLE ${ghosts.length} GENERATIES`, SCREEN_MARGIN, SCREEN_MARGIN, 1, COLORS.ink);
+    drawText(ctx, `FRAME ${frame} ${reached} BINNEN`, SCREEN_MARGIN, 26, 1, COLORS.ink);
     statusEl.textContent =
       `Level ${levelIndex + 1}, alle ${ghosts.length} generaties tegelijk (blauw = vroegste, geel = laatste). ` +
       `${reached} haalden het certificaat.`;
   } else {
     const ghost = ghosts[0];
-    drawText(ctx, `LEVEL ${levelIndex + 1} GEN ${ghost.record.generation}`, 6, 6, 1, COLORS.ink);
-    drawText(ctx, `FRAME ${frame} ${OUTCOME_LABELS[ghost.run.outcome]}`, 6, 26, 1, COLORS.ink);
+    drawText(
+      ctx,
+      `LEVEL ${levelIndex + 1} GEN ${ghost.record.generation}`,
+      SCREEN_MARGIN,
+      SCREEN_MARGIN,
+      1,
+      COLORS.ink
+    );
+    drawText(ctx, `FRAME ${frame} ${OUTCOME_LABELS[ghost.run.outcome]}`, SCREEN_MARGIN, 26, 1, COLORS.ink);
     statusEl.textContent = replayStatus(ghost);
   }
 }
@@ -516,6 +523,46 @@ const CONSOLE_KEYS = new Set([
   "Backspace",
 ]);
 
+/** Keys that mean the same thing on every screen. Returns true when handled. */
+function handleGlobalKey(key: string): boolean {
+  if (FRAME_RATE_KEYS.has(key)) {
+    showFrameRate = !showFrameRate;
+    return true;
+  }
+  if (!MENU_BACK_KEYS.has(key)) {
+    return false;
+  }
+  // Escape backs out one step at a time: a screen returns to the menu, the
+  // menu returns to the game.
+  if (screen === "menu") {
+    leaveConsole?.("title");
+  } else {
+    toMenu();
+  }
+  return true;
+}
+
+/** Adjusting the connection picked in the network. */
+function handleWeightKey(key: string): void {
+  if (key === "ArrowUp") {
+    nudgeSelectedWeight(1);
+  } else if (key === "ArrowDown") {
+    nudgeSelectedWeight(-1);
+  } else if (key === "Backspace") {
+    resetEditedWeights();
+  }
+}
+
+function handleMenuKey(key: string): void {
+  if (MENU_UP_KEYS.has(key)) {
+    menu.moveBy(-1);
+  } else if (MENU_DOWN_KEYS.has(key)) {
+    menu.moveBy(1);
+  } else if (MENU_SELECT_KEYS.has(key)) {
+    menu.activate();
+  }
+}
+
 function onKeyDown(event: KeyboardEvent): void {
   // Same rule as the game: swallow only the keys this page acts on, so the
   // browser's own shortcuts and Firefox's type-ahead find stay out of the way.
@@ -525,39 +572,14 @@ function onKeyDown(event: KeyboardEvent): void {
   if (CONSOLE_KEYS.has(event.key)) {
     event.preventDefault();
   }
-  if (FRAME_RATE_KEYS.has(event.key)) {
-    showFrameRate = !showFrameRate;
-    return;
-  }
-  if (MENU_BACK_KEYS.has(event.key)) {
-    // Escape backs out one step at a time: a screen returns to the menu, the
-    // menu returns to the game.
-    if (screen === "menu") {
-      leaveConsole?.("title");
-    } else {
-      toMenu();
-    }
+
+  if (handleGlobalKey(event.key)) {
     return;
   }
   if (screen === "replay" && selected !== null) {
-    if (event.key === "ArrowUp") {
-      nudgeSelectedWeight(1);
-    } else if (event.key === "ArrowDown") {
-      nudgeSelectedWeight(-1);
-    } else if (event.key === "Backspace") {
-      resetEditedWeights();
-    }
-    return;
-  }
-  if (screen !== "menu") {
-    return;
-  }
-  if (MENU_UP_KEYS.has(event.key)) {
-    menu.moveBy(-1);
-  } else if (MENU_DOWN_KEYS.has(event.key)) {
-    menu.moveBy(1);
-  } else if (MENU_SELECT_KEYS.has(event.key)) {
-    menu.activate();
+    handleWeightKey(event.key);
+  } else if (screen === "menu") {
+    handleMenuKey(event.key);
   }
 }
 
