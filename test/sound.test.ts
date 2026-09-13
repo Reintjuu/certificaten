@@ -1,6 +1,14 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { LEVELS, NO_INPUT, createInitialState, createPlayingState, step } from "../src/engine";
+import {
+  EnemyKind,
+  EnemyState,
+  LEVELS,
+  NO_INPUT,
+  createInitialState,
+  createPlayingState,
+  step,
+} from "../src/engine";
 import { SoundEvent, eventsBetween } from "../src/sound-events";
 
 // Sound itself cannot be unit tested: a WebAudio context makes noise, not
@@ -35,9 +43,39 @@ describe("what a frame is worth hearing", () => {
     const before = createPlayingState(0);
     const after = {
       ...before,
-      enemies: before.enemies.map((enemy, index) => (index === 0 ? { ...enemy, alive: false } : enemy)),
+      enemies: before.enemies.map((enemy, index) =>
+        index === 0 ? { ...enemy, state: EnemyState.Gone } : enemy
+      ),
     };
     assert.deepEqual(eventsBetween(before, after), [SoundEvent.Stomp]);
+  });
+
+  test("a koopa withdrawing into its shell is a stomp too", () => {
+    const before = createPlayingState(1);
+    const shelled = {
+      ...before,
+      enemies: before.enemies.map((enemy) =>
+        enemy.kind === EnemyKind.Koopa ? { ...enemy, state: EnemyState.Shell } : enemy
+      ),
+    };
+    assert.deepEqual(eventsBetween(before, shelled), [SoundEvent.Stomp]);
+  });
+
+  test("kicking that shell awake is heard as well", () => {
+    const standing = createPlayingState(1);
+    const before = {
+      ...standing,
+      enemies: standing.enemies.map((enemy) =>
+        enemy.kind === EnemyKind.Koopa ? { ...enemy, state: EnemyState.Shell } : enemy
+      ),
+    };
+    const kicked = {
+      ...before,
+      enemies: before.enemies.map((enemy) =>
+        enemy.kind === EnemyKind.Koopa ? { ...enemy, state: EnemyState.Sliding } : enemy
+      ),
+    };
+    assert.deepEqual(eventsBetween(before, kicked), [SoundEvent.Stomp]);
   });
 
   test("growing and shrinking are told apart", () => {

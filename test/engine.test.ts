@@ -2,6 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
   CANVAS_H,
+  isActive,
   PHYSICS,
   NO_INPUT,
   createPlayingState,
@@ -191,7 +192,7 @@ describe("enemies", () => {
 
     let state = falling;
     let bounced = false;
-    for (let frame = 0; frame < 40 && state.enemies[0].alive; frame++) {
+    for (let frame = 0; frame < 40 && isActive(state.enemies[0]); frame++) {
       state = step(state, NO_INPUT, levels);
       if (state.player.vy === PHYSICS.bounceVelocity) {
         bounced = true;
@@ -199,7 +200,7 @@ describe("enemies", () => {
     }
 
     assert.equal(state.phase, "playing", "a clean stomp must not kill the player");
-    assert.equal(state.enemies[0].alive, false);
+    assert.equal(isActive(state.enemies[0]), false);
     assert.equal(state.enemies[0].squashTimer, PHYSICS.squashFramerules);
     assert.ok(bounced, "stomping should bounce the player back up");
   });
@@ -211,7 +212,7 @@ describe("enemies", () => {
     falling.player.y = 120;
 
     const state = run(falling, levels, 90, NO_INPUT);
-    assert.equal(state.enemies[0].alive, false);
+    assert.equal(isActive(state.enemies[0]), false);
     assert.equal(state.enemies[0].squashTimer, 0);
   });
 
@@ -219,7 +220,7 @@ describe("enemies", () => {
     const levels = [enemyLevel(150)];
     const state = run(settleOnGround(levels), levels, 120, input({ right: true }));
     assert.equal(state.phase, "dead");
-    assert.equal(state.enemies[0].alive, true);
+    assert.equal(isActive(state.enemies[0]), true);
   });
 
   test("dropping onto an enemy that stands on the ground still stomps it", () => {
@@ -234,7 +235,7 @@ describe("enemies", () => {
 
     state = step(state, NO_INPUT, levels);
     assert.equal(state.phase, "playing");
-    assert.equal(state.enemies[0].alive, false);
+    assert.equal(isActive(state.enemies[0]), false);
   });
 
   test("an enemy walks off its ledge and falls out of the world", () => {
@@ -249,7 +250,7 @@ describe("enemies", () => {
     ];
     const state = run(createPlayingState(0, levels), levels, 300, NO_INPUT);
     assert.equal(state.phase, "playing", "the player should still be standing on its own ground");
-    assert.equal(state.enemies[0].alive, false, "the enemy should have walked off and dropped away");
+    assert.equal(isActive(state.enemies[0]), false, "the enemy should have walked off and dropped away");
   });
 });
 

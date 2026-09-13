@@ -1,8 +1,8 @@
 import { certificateOn, enemyOn, mushroomOn, platform, startOn } from "./level-builders";
-import { Facing } from "./physics";
+import { EnemyKind, Facing } from "./physics";
 
 export type Platform = { x: number; y: number; w: number; h: number };
-export type EnemyDef = { x: number; y: number; facing: Facing };
+export type EnemyDef = { x: number; y: number; facing: Facing; kind?: EnemyKind };
 export type Rect = { x: number; y: number; w: number; h: number };
 
 export type MushroomDef = { x: number; y: number };
@@ -85,6 +85,7 @@ export const LEVELS: Level[] = [
       enemyOn(two.ground, { offsetFromLeftEdge: 250, facing: Facing.Left }),
       enemyOn(two.stair2, { offsetFromLeftEdge: 60, facing: Facing.Left }),
       enemyOn(two.groundEnd, { offsetFromLeftEdge: 260, facing: Facing.Left }),
+      enemyOn(two.groundEnd, { offsetFromLeftEdge: 470, facing: Facing.Left, kind: EnemyKind.Koopa }),
       enemyOn(two.balcony, { offsetFromLeftEdge: 100, facing: Facing.Left }),
     ],
     mushrooms: [mushroomOn(two.ledge, 40), mushroomOn(two.balcony, 60)],
@@ -94,6 +95,8 @@ export const LEVELS: Level[] = [
       "Loket twee: 'Extra verificatie vereist.'",
       "De formulier-wachters lopen gewoon van de rand af.",
       "Spring op ze. Het mag, echt.",
+      "De gepantserde trekt zich terug in zijn dossier.",
+      "Geef dat dossier een zet en het ruimt de rij op.",
     ],
     outro: ["Certificaat 2 verkregen.", "Na drie exemplaren die niemand leest.", "Een loket te gaan."],
   },
@@ -104,6 +107,7 @@ export const LEVELS: Level[] = [
     enemies: [
       enemyOn(three.ground, { offsetFromLeftEdge: 200, facing: Facing.Left }),
       enemyOn(three.landing, { offsetFromLeftEdge: 120, facing: Facing.Left }),
+      enemyOn(three.pillar4, { offsetFromLeftEdge: 30, facing: Facing.Left, kind: EnemyKind.Koopa }),
       enemyOn(three.prize, { offsetFromLeftEdge: 140, facing: Facing.Left }),
     ],
     mushrooms: [mushroomOn(three.pillar2, 30)],

@@ -17,7 +17,7 @@ import type { Enemy, Input, Mushroom, Player } from "./physics";
 
 export { LEVELS };
 export type { Level };
-export { CANVAS_W, CANVAS_H, PHYSICS, NO_INPUT } from "./physics";
+export { CANVAS_W, CANVAS_H, PHYSICS, NO_INPUT, EnemyKind, EnemyState, isActive, isVisible } from "./physics";
 export type { Player, Enemy, Input, Direction } from "./physics";
 
 /** The blink cycle for "PRESS START" and the dialogue arrow. */

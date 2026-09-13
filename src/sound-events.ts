@@ -4,7 +4,7 @@
 // what changed and hands the answer to the synth. Keeping the deciding apart
 // from the playing is what makes it testable at all, since a WebAudio context
 // is not something a unit test can listen to.
-import type { GameState } from "./engine";
+import { EnemyState, isActive, type GameState } from "./engine";
 
 export const SoundEvent = {
   Jump: "jump",
@@ -18,8 +18,14 @@ export const SoundEvent = {
 } as const;
 export type SoundEvent = (typeof SoundEvent)[keyof typeof SoundEvent];
 
-function countDead(state: GameState): number {
-  return state.enemies.filter((enemy) => !enemy.alive).length;
+/** Anything that stopped being a threat: flattened, shelled or knocked away. */
+function countDealtWith(state: GameState): number {
+  return state.enemies.filter((enemy) => !isActive(enemy)).length;
+}
+
+/** Kicking a shell awake, which SMB1 answers with the stomp blip as well. */
+function countSliding(state: GameState): number {
+  return state.enemies.filter((enemy) => enemy.state === EnemyState.Sliding).length;
 }
 
 function countTaken(state: GameState): number {
@@ -38,7 +44,10 @@ export function eventsBetween(previous: GameState, next: GameState): SoundEvent[
   if (previous.player.grounded && !next.player.grounded && next.player.vy < 0) {
     events.push(SoundEvent.Jump);
   }
-  if (countDead(next) > countDead(previous)) {
+  if (countDealtWith(next) > countDealtWith(previous)) {
+    events.push(SoundEvent.Stomp);
+  }
+  if (countSliding(next) > countSliding(previous)) {
     events.push(SoundEvent.Stomp);
   }
   if (countTaken(next) > countTaken(previous)) {

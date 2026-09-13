@@ -28,12 +28,16 @@ De bewegingsregels komen uit de Super Mario Bros.-disassembly (`smbdis.asm`), ni
 | Zwaartekracht stijgen / vallen | `$20…$28` / `$60…$90` | 0,117–0,156 / 0,375–0,563   |
 | Max. valsnelheid               | `$04`                 | 4 px per frame              |
 | Terugstuiter na pletten        | `$fc`                 | −4 px per frame             |
+| Geschopt schild                | `$30`                 | 3 px per frame              |
+| Schild komt weer bij           | `$10`                 | 16 framerules               |
 
 De levels zijn 1440px breed en de camera scrollt mee zoals in SMB1: hij volgt je zodra je voorbij het midden komt en gaat **nooit terug**, waardoor de linkerrand van het beeld een muur is. Vijanden hebben echte physics: ze vallen, en ze draaien _niet_ om bij een rand maar lopen eraf, precies zoals SMB1's normale vijanden; ze blijven slapen tot de camera ze in beeld brengt, zoals het origineel ze uit de leveldata spawnt.
 
 Twee timers, allebei uit de ROM: de **framerule** (`IntervalTimerControl`, 21 frames) laat de interval-timers tikken (bij ons het platgedrukte-vijand-timertje) en de **leveltimer** is een aparte frame-timer die elke 24 frames één eenheid aftelt, dus 400 eenheden duren 160 seconden. Op nul ga je dood.
 
 Je begint klein. Een paddenstoel maakt je groot (`BoundBoxCtrlData`: 24px hoog in plaats van 12), en alleen als grote Mario kun je bukken, waarbij je hitbox weer naar de kleine krimpt. Een klap kost een grote speler zijn formaat in plaats van zijn leven, met `$08` framerules onkwetsbaarheid erna (`ForceInjury`); klein zijn en geraakt worden is wél fataal. Paddenstoelen bewegen als vijanden: ze lopen, vallen en rollen van randen af.
+
+Er lopen twee soorten vijanden rond. Een goomba wordt plat en verdwijnt. Een koopa kruipt in zijn schild: dat schild blijft liggen, en loop je ertegenaan dan schopt je het weg met `$30` (3 px per frame, zes keer een looppas, uit `KickedShellXSpdData`), waarna het alles omver maait wat het onderweg tegenkomt. Een stilliggend schild telt `RevivalRateData` af (`$10` framerules) en dan staat de koopa weer op zijn poten. Erop springen zet een glijdend schild weer stil, en dat is hoe je een schild tegen de rest van de rij aan gebruikt zonder er zelf onder te komen.
 
 Twee details die vaak verkeerd worden nagemaakt: SMB1 varieert de spronghoogte door bij het loslaten van de knop naar de _zware valzwaartekracht_ om te schakelen (niet door de opwaartse snelheid af te kappen), en de sprongboog wordt gekozen uit een tabel van vijf rijen op basis van je snelheid bij het afzetten: hard rennen springt hoger én strakker.
 

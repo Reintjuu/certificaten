@@ -1,5 +1,5 @@
 import type { EnemyDef, Platform, Rect } from "./levels";
-import type { Facing } from "./physics";
+import type { EnemyKind, Facing } from "./physics";
 
 // Sizes the builders need to place things on top of a platform. They mirror
 // PHYSICS in engine.ts; engine.ts imports them from here so the two can never
@@ -24,12 +24,13 @@ export function platform(x: number, y: number, w: number, h = DEFAULT_PLATFORM_T
 
 export function enemyOn(
   platform: Platform,
-  placement: { offsetFromLeftEdge: number; facing: Facing }
+  placement: { offsetFromLeftEdge: number; facing: Facing; kind?: EnemyKind }
 ): EnemyDef {
   return {
     x: platform.x + placement.offsetFromLeftEdge,
     y: platform.y - ENEMY_SIZE.h,
     facing: placement.facing,
+    kind: placement.kind,
   };
 }
 

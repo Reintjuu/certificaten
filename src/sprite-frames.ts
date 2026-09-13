@@ -12,6 +12,10 @@ export const PALETTE: Record<string, string | undefined> = {
   'Y': '#ffd84a',
   'W': '#ffffff',
   'K': '#141414',
+  'G': '#3aa33a',
+  'g': '#1f6b1f',
+  'L': '#7ad07a',
+  'O': '#e8a020',
 }
 
 export type Frame = string[]
@@ -306,6 +310,46 @@ export const GoombaSquashed: Frame = [
   'MMMDDDDDDDDMM   ',
   'MMMMMMMMMMMM    ',
   ' KK        KK   ',
+  '                ',
+]
+
+// A koopa: green shell, yellow feet, and it walks off ledges like the rest.
+export const Koopa: Frame = [
+  '      GGGG      ',
+  '     GGGGGG     ',
+  '    GGWKWGGG    ',
+  '    GGGGGGOO    ',
+  '     GGGGGG     ',
+  '   ggGGGGGGgg   ',
+  '  ggGGLLLLGGgg  ',
+  ' ggGGLLGGLLGGgg ',
+  ' gGGLLGGGGLLGGg ',
+  ' gGGGLLGGLLGGGg ',
+  ' ggGGGLLLLGGGgg ',
+  '  ggGGGGGGGGgg  ',
+  '   gggggggggg   ',
+  '  WWWWWWWWWWWW  ',
+  '   OOO    OOO   ',
+  '  OOOO    OOOO  ',
+]
+
+// The same shell with nobody in it, which is what you kick around.
+export const KoopaShell: Frame = [
+  '                ',
+  '                ',
+  '                ',
+  '     gggggg     ',
+  '   ggGGGGGGgg   ',
+  '  ggGGLLLLGGgg  ',
+  ' ggGGLLGGLLGGgg ',
+  ' gGGLLGGGGLLGGg ',
+  ' gGGGLLGGLLGGGg ',
+  ' ggGGGLLLLGGGgg ',
+  '  ggGGGGGGGGgg  ',
+  '   gggggggggg   ',
+  '  WWWWWWWWWWWW  ',
+  '   WWWWWWWWWW   ',
+  '                ',
   '                ',
 ]
 

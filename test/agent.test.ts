@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { LEVELS, createPlayingState } from "../src/engine";
+import { EnemyState, LEVELS, createPlayingState } from "../src/engine";
 import {
   GENOME_SIZE,
   INPUT_SIZE,
@@ -31,7 +31,7 @@ describe("policy network", () => {
 
   test("copes with a level where every enemy is already gone", () => {
     const state = createPlayingState(0);
-    state.enemies.forEach((enemy) => (enemy.alive = false));
+    state.enemies.forEach((enemy) => (enemy.state = EnemyState.Gone));
     const values = features(state, LEVELS[0]);
     assert.equal(values.length, INPUT_SIZE);
     assert.ok(values.every(Number.isFinite));

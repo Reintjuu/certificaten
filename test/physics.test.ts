@@ -9,8 +9,11 @@ import {
   clamp,
   jumpIndexFor,
   createPlayer,
+  createEnemies,
   moveEnemies,
   overlaps,
+  EnemyKind,
+  EnemyState,
   resolveEnemyCollisions,
   resolvePlatformCollisions,
   updateAnimation,
@@ -35,18 +38,8 @@ function input(overrides: Partial<Input> = {}): Input {
 }
 
 function enemy(overrides: Partial<Enemy> = {}): Enemy {
-  return {
-    x: 100,
-    y: 100,
-    w: PHYSICS.enemyW,
-    h: PHYSICS.enemyH,
-    vx: 1,
-    vy: 0,
-    alive: true,
-    awake: true,
-    squashTimer: 0,
-    ...overrides,
-  };
+  const [made] = createEnemies([{ x: 100, y: 100, facing: Facing.Right }]);
+  return { ...made, vx: 1, awake: true, ...overrides };
 }
 
 function levelWithPlatform(x: number, y: number, w: number): Level {
@@ -392,17 +385,37 @@ describe("moveEnemies", () => {
   });
 
   test("a squashed enemy counts down once per framerule, not per frame", () => {
-    const squashed = enemy({ alive: false, squashTimer: 3, x: 100 });
+    const squashed = enemy({ state: EnemyState.Squashed, squashTimer: 3, x: 100 });
     moveEnemies([squashed], level, 0, false);
     assert.equal(squashed.squashTimer, 3, "an ordinary frame leaves it alone");
     moveEnemies([squashed], level, 0, true);
     assert.equal(squashed.squashTimer, 2);
   });
 
-  test("the countdown never goes negative", () => {
-    const gone = enemy({ alive: false, squashTimer: 0 });
-    moveEnemies([gone], level, 0, true);
-    assert.equal(gone.squashTimer, 0);
+  test("a flattened goomba leaves once its timer runs out", () => {
+    const squashed = enemy({ state: EnemyState.Squashed, squashTimer: 1 });
+    moveEnemies([squashed], level, 0, true);
+    assert.equal(squashed.state, EnemyState.Gone);
+  });
+
+  test("a stomped koopa climbs back into its feet instead", () => {
+    // RevivalRateData: the ROM stands them up again rather than removing them,
+    // which is what makes a shell something you have to deal with.
+    const shell = enemy({ kind: EnemyKind.Koopa, state: EnemyState.Shell, squashTimer: 1 });
+    moveEnemies([shell], level, 0, true);
+    assert.equal(shell.state, EnemyState.Walking);
+    assert.notEqual(shell.vx, 0, "and it walks again");
+  });
+
+  test("it carries on the way it was going, which a kick can have turned around", () => {
+    const shell = enemy({
+      kind: EnemyKind.Koopa,
+      state: EnemyState.Shell,
+      facing: Facing.Left,
+      squashTimer: 1,
+    });
+    moveEnemies([shell], level, 0, true);
+    assert.ok(shell.vx < 0, "a koopa that was walking left still is");
   });
 });
 
@@ -413,7 +426,7 @@ describe("resolveEnemyCollisions", () => {
     const died = resolveEnemyCollisions(p, [target], true);
 
     assert.equal(died, false);
-    assert.equal(target.alive, false);
+    assert.equal(target.state, EnemyState.Squashed);
     assert.equal(target.squashTimer, PHYSICS.squashFramerules);
     assert.equal(p.vy, PHYSICS.bounceVelocity);
   });
@@ -427,11 +440,11 @@ describe("resolveEnemyCollisions", () => {
     const target = enemy({ x: 100, y: 100 });
     const p = player({ x: 95, y: 100 });
     assert.equal(resolveEnemyCollisions(p, [target], false), true);
-    assert.equal(target.alive, true);
+    assert.equal(target.state, EnemyState.Walking);
   });
 
   test("an already squashed enemy is harmless", () => {
-    const target = enemy({ x: 100, y: 100, alive: false });
+    const target = enemy({ x: 100, y: 100, state: EnemyState.Gone });
     const p = player({ x: 100, y: 100 });
     assert.equal(resolveEnemyCollisions(p, [target], false), false);
   });
@@ -443,7 +456,7 @@ describe("resolveEnemyCollisions", () => {
     const target = enemy({ x: 100, y: 100 });
     const p = player({ x: 100, y: 100 + 8, big: true });
     assert.equal(resolveEnemyCollisions(p, [target], true), false);
-    assert.equal(target.alive, false);
+    assert.equal(target.state, EnemyState.Squashed);
     assert.equal(p.big, true, "a stomp never costs you your size");
   });
 
@@ -455,8 +468,8 @@ describe("resolveEnemyCollisions", () => {
     const p = player({ x: 102, y: 100 - PHYSICS.playerSmallH + 4, big: true });
 
     assert.equal(resolveEnemyCollisions(p, [first, second], true), false);
-    assert.equal(first.alive, false);
-    assert.equal(second.alive, false);
+    assert.equal(first.state, EnemyState.Squashed);
+    assert.equal(second.state, EnemyState.Squashed);
     assert.equal(p.big, true);
   });
 
@@ -465,7 +478,65 @@ describe("resolveEnemyCollisions", () => {
     const p = player({ x: 100, y: 100, big: true, stompTimer: 1 });
 
     assert.equal(resolveEnemyCollisions(p, [target], false), false);
-    assert.equal(target.alive, false, "the timer makes even a side touch a stomp");
+    assert.equal(target.state, EnemyState.Squashed, "the timer makes even a side touch a stomp");
     assert.equal(p.big, true);
+  });
+});
+
+describe("the shell a koopa leaves behind", () => {
+  const koopa = (overrides: Partial<Enemy> = {}): Enemy => enemy({ kind: EnemyKind.Koopa, ...overrides });
+
+  test("stomping one leaves a shell rather than removing it", () => {
+    const target = koopa();
+    const p = player({ x: 100, y: 100 - PHYSICS.playerSmallH + 4 });
+
+    assert.equal(resolveEnemyCollisions(p, [target], true), false);
+    assert.equal(target.state, EnemyState.Shell);
+    assert.equal(target.vx, 0, "a shell sits still until it is kicked");
+  });
+
+  test("touching a still shell kicks it away from you, and does not hurt", () => {
+    const shell = koopa({ state: EnemyState.Shell, x: 100 });
+    const fromLeft = player({ x: 90, y: 100, big: true });
+
+    assert.equal(resolveEnemyCollisions(fromLeft, [shell], false), false);
+    assert.equal(shell.state, EnemyState.Sliding);
+    assert.ok(shell.vx > 0, "kicked to the right when you are on its left");
+    assert.equal(fromLeft.big, true, "a kick is not a hit");
+    assert.equal(Math.abs(shell.vx), PHYSICS.shellSpeed);
+  });
+
+  test("it goes the other way when you are on its right", () => {
+    const shell = koopa({ state: EnemyState.Shell, x: 100 });
+    assert.equal(resolveEnemyCollisions(player({ x: 108, y: 100 }), [shell], false), false);
+    assert.ok(shell.vx < 0);
+  });
+
+  test("a sliding shell is dangerous from the side and stoppable from above", () => {
+    const sliding = koopa({ state: EnemyState.Sliding, x: 100, vx: PHYSICS.shellSpeed });
+    const walked = player({ x: 95, y: 100, big: true });
+    assert.equal(resolveEnemyCollisions(walked, [sliding], false), false);
+    assert.equal(walked.big, false, "walking into a moving shell costs you your size");
+
+    const stopped = koopa({ state: EnemyState.Sliding, x: 100, vx: PHYSICS.shellSpeed });
+    const dropped = player({ x: 100, y: 100 - PHYSICS.playerSmallH + 4 });
+    assert.equal(resolveEnemyCollisions(dropped, [stopped], true), false);
+    assert.equal(stopped.state, EnemyState.Shell);
+    assert.equal(stopped.vx, 0);
+  });
+
+  test("a sliding shell clears out whatever it catches", () => {
+    const level = levelWithPlatform(0, 200, 400);
+    const shell = koopa({ state: EnemyState.Sliding, x: 100, y: 184, vx: PHYSICS.shellSpeed });
+    const bystander = enemy({ x: 104, y: 184 });
+
+    moveEnemies([shell, bystander], level, 0, false);
+    assert.equal(bystander.state, EnemyState.Gone);
+    assert.equal(shell.state, EnemyState.Sliding, "and carries on");
+  });
+
+  test("a shell moves six times as fast as a walk, as the ROM has it", () => {
+    // KickedShellXSpdData is $30 against MoveNormalEnemy's $08.
+    assert.equal(PHYSICS.shellSpeed / PHYSICS.enemyWalkSpeed, 6);
   });
 });

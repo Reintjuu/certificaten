@@ -1,4 +1,14 @@
-import { CANVAS_H, CANVAS_W, type GameState, type Level, type Player } from "./engine";
+import {
+  CANVAS_H,
+  CANVAS_W,
+  EnemyKind,
+  EnemyState,
+  isVisible,
+  type Enemy,
+  type GameState,
+  type Level,
+  type Player,
+} from "./engine";
 import { drawText } from "./font";
 import {
   drawSprite,
@@ -6,6 +16,8 @@ import {
   SMALL_PLAYER,
   Goomba,
   GoombaSquashed,
+  Koopa,
+  KoopaShell,
   Mushroom,
   type Frame,
 } from "./sprites";
@@ -109,6 +121,17 @@ export function drawScene(ctx: CanvasRenderingContext2D, level: Level, cameraX: 
   ctx.drawImage(sceneFor(level), left, 0, width, CANVAS_H, left, 0, width, CANVAS_H);
 }
 
+/** Which picture an enemy is wearing, or null when it is gone. */
+function enemyFrame(enemy: Enemy): Frame | null {
+  if (!isVisible(enemy)) {
+    return null;
+  }
+  if (enemy.kind === EnemyKind.Koopa) {
+    return enemy.state === EnemyState.Walking ? Koopa : KoopaShell;
+  }
+  return enemy.state === EnemyState.Walking ? Goomba : GoombaSquashed;
+}
+
 function playerFrame(player: Player): Frame {
   if (player.big && player.crouching) {
     return BIG_PLAYER.crouch;
@@ -125,12 +148,12 @@ function playerFrame(player: Player): Frame {
 
 export function drawEntities(ctx: CanvasRenderingContext2D, state: GameState): void {
   for (const enemy of state.enemies) {
-    if (!enemy.alive && enemy.squashTimer <= 0) {
+    const frame = enemyFrame(enemy);
+    if (frame === null) {
       continue;
     }
-    const frame = enemy.alive ? Goomba : GoombaSquashed;
-    const y = enemy.alive ? enemy.y : enemy.y + (enemy.h - GoombaSquashed.length);
-    drawSprite(ctx, frame, enemy.x, y, 1);
+    // Sprites stand on the hitbox's feet, so a flattened one sits lower.
+    drawSprite(ctx, frame, enemy.x, enemy.y + enemy.h - frame.length, 1, enemy.facing === -1);
   }
 
   for (const mushroom of state.mushrooms) {

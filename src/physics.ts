@@ -71,6 +71,10 @@ export const PHYSICS = {
 
   /** MoveNormalEnemy: normal enemies walk at $f8 and never turn at a ledge. */
   enemyWalkSpeed: 0x08 * SUBPIXEL,
+  /** KickedShellXSpdData: a kicked shell runs at $30, six times a walk. */
+  shellSpeed: 0x30 * SUBPIXEL,
+  /** RevivalRateData: a stomped koopa gets back up after this many framerules. */
+  shellRevivalFramerules: 0x10,
   /** MoveD_EnemyVertically / SetHiMax: enemy gravity and its fall cap. */
   enemyGravity: 0x3d * SUBFORCE,
   enemyMaxFallSpeed: 0x03,
@@ -139,6 +143,24 @@ export type Player = {
   stompTimer: number;
 };
 
+export const EnemyKind = { Goomba: "goomba", Koopa: "koopa" } as const;
+export type EnemyKind = (typeof EnemyKind)[keyof typeof EnemyKind];
+
+/**
+ * What an enemy is doing, which used to be a boolean and a timer between them.
+ * A koopa needs four of these, so the machine is written out rather than
+ * implied: walking, a shell sitting still, that shell sliding after a kick,
+ * and the flattened goomba on its way out.
+ */
+export const EnemyState = {
+  Walking: "walking",
+  Squashed: "squashed",
+  Shell: "shell",
+  Sliding: "sliding",
+  Gone: "gone",
+} as const;
+export type EnemyState = (typeof EnemyState)[keyof typeof EnemyState];
+
 export type Enemy = {
   x: number;
   y: number;
@@ -146,12 +168,25 @@ export type Enemy = {
   h: number;
   vx: number;
   vy: number;
-  alive: boolean;
+  kind: EnemyKind;
+  state: EnemyState;
+  /** Which way it is pointed, which a motionless shell keeps from before. */
+  facing: Facing;
   /** Enemies stay dormant until the camera brings them into view. */
   awake: boolean;
   /** Counted in framerules, like SMB1's EnemyIntervalTimer. */
   squashTimer: number;
 };
+
+/** Anything that can still hurt you, or be hurt. */
+export function isActive(enemy: Enemy): boolean {
+  return enemy.state === EnemyState.Walking || enemy.state === EnemyState.Sliding;
+}
+
+/** Anything still on screen, including a shell and a fading goomba. */
+export function isVisible(enemy: Enemy): boolean {
+  return enemy.state !== EnemyState.Gone;
+}
 
 export type Input = {
   left: boolean;
@@ -282,11 +317,13 @@ export function createEnemies(definitions: EnemyDef[]): Enemy[] {
   return definitions.map((definition) => ({
     x: definition.x,
     y: definition.y,
-    w: PHYSICS.enemyW,
-    h: PHYSICS.enemyH,
-    vx: definition.facing * PHYSICS.enemyWalkSpeed,
+    w: ENEMY_SIZE.w,
+    h: ENEMY_SIZE.h,
+    vx: PHYSICS.enemyWalkSpeed * definition.facing,
     vy: 0,
-    alive: true,
+    kind: definition.kind ?? EnemyKind.Goomba,
+    state: EnemyState.Walking,
+    facing: definition.facing,
     awake: false,
     squashTimer: 0,
   }));
@@ -455,9 +492,22 @@ export function updateAnimation(p: Player, dir: Direction): void {
  */
 export function moveEnemies(enemies: Enemy[], level: Level, cameraX: number, framerule: boolean): void {
   for (const enemy of enemies) {
-    if (!enemy.alive) {
+    if (enemy.state === EnemyState.Gone) {
+      continue;
+    }
+    if (enemy.state === EnemyState.Squashed || enemy.state === EnemyState.Shell) {
       if (framerule && enemy.squashTimer > 0) {
         enemy.squashTimer--;
+      }
+      if (enemy.squashTimer === 0) {
+        // A flattened goomba is finished; a koopa climbs back into its feet
+        // and carries on the way it was going.
+        if (enemy.kind === EnemyKind.Koopa) {
+          enemy.state = EnemyState.Walking;
+          send(enemy, enemy.facing, PHYSICS.enemyWalkSpeed);
+        } else {
+          enemy.state = EnemyState.Gone;
+        }
       }
       continue;
     }
@@ -475,13 +525,34 @@ export function moveEnemies(enemies: Enemy[], level: Level, cameraX: number, fra
 
     // The level's outer walls are the only thing that turns them around.
     if (enemy.x < 0) {
-      enemy.vx = Math.abs(enemy.vx);
+      send(enemy, Facing.Right, Math.abs(enemy.vx));
     }
     if (enemy.x + enemy.w > level.width) {
-      enemy.vx = -Math.abs(enemy.vx);
+      send(enemy, Facing.Left, Math.abs(enemy.vx));
     }
     if (enemy.y > CANVAS_H + PHYSICS.deathFallMargin) {
-      enemy.alive = false;
+      enemy.state = EnemyState.Gone;
+    }
+  }
+  runDownAnythingInTheWay(enemies);
+}
+
+/** Direction and speed are set together, so the two can never disagree. */
+function send(enemy: Enemy, facing: Facing, speed: number): void {
+  enemy.facing = facing;
+  enemy.vx = speed * facing;
+}
+
+/** A sliding shell clears out whatever it catches, as it does in the ROM. */
+function runDownAnythingInTheWay(enemies: Enemy[]): void {
+  for (const shell of enemies) {
+    if (shell.state !== EnemyState.Sliding) {
+      continue;
+    }
+    for (const other of enemies) {
+      if (other !== shell && isActive(other) && overlaps(shell, other)) {
+        other.state = EnemyState.Gone;
+      }
     }
   }
 }
@@ -505,15 +576,30 @@ export function moveEnemies(enemies: Enemy[], level: Level, cameraX: number, fra
  */
 export function resolveEnemyCollisions(p: Player, enemies: Enemy[], wasFalling: boolean): boolean {
   for (const enemy of enemies) {
-    if (!enemy.alive || !overlaps(p, enemy)) {
+    if (!overlaps(p, enemy)) {
+      continue;
+    }
+
+    // A shell sitting still is not a threat, it is a thing to kick. Which way
+    // it goes is decided by which side of it you are on.
+    if (enemy.state === EnemyState.Shell) {
+      enemy.state = EnemyState.Sliding;
+      // EnemyFacePlayer: it leaves in whichever direction you are not.
+      send(enemy, p.x + p.w / 2 < enemy.x + enemy.w / 2 ? Facing.Right : Facing.Left, PHYSICS.shellSpeed);
+      enemy.squashTimer = 0;
+      if (wasFalling) {
+        p.vy = PHYSICS.bounceVelocity;
+      }
+      continue;
+    }
+    if (!isActive(enemy)) {
       continue;
     }
 
     // ChkETmrs: a stomp already landed this frame makes the next one a stomp
     // too, which is why two enemies at once cannot cost you your size.
     if (wasFalling || p.stompTimer > 0) {
-      enemy.alive = false;
-      enemy.squashTimer = PHYSICS.squashFramerules;
+      stomp(enemy);
       p.vy = PHYSICS.bounceVelocity;
       p.stompTimer++;
       continue;
@@ -533,6 +619,20 @@ export function resolveEnemyCollisions(p: Player, enemies: Enemy[], wasFalling: 
     p.invincibleFramerules = PHYSICS.injuryFramerules;
   }
   return false;
+}
+
+/** What landing on one does, which is where a koopa differs from a goomba. */
+function stomp(enemy: Enemy): void {
+  if (enemy.kind === EnemyKind.Koopa) {
+    // A sliding shell stops dead; a walking koopa becomes that shell.
+    enemy.state = EnemyState.Shell;
+    enemy.vx = 0;
+    enemy.squashTimer = PHYSICS.shellRevivalFramerules;
+    return;
+  }
+  enemy.state = EnemyState.Squashed;
+  enemy.vx = 0;
+  enemy.squashTimer = PHYSICS.squashFramerules;
 }
 
 function collectMushrooms(p: Player, mushrooms: Mushroom[]): void {

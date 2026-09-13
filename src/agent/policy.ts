@@ -2,7 +2,16 @@
 // library) mapping the game state to a movement decision. Shared by the
 // trainer and the replay viewer so a recorded genome always behaves the same
 // in both.
-import { CANVAS_W, CANVAS_H, NO_INPUT, PHYSICS, type GameState, type Input, type Level } from "../engine";
+import {
+  CANVAS_W,
+  CANVAS_H,
+  NO_INPUT,
+  PHYSICS,
+  isActive,
+  type GameState,
+  type Input,
+  type Level,
+} from "../engine";
 import type { Random } from "./random";
 
 /** How far an output must swing before it counts as pressing a direction. */
@@ -259,7 +268,7 @@ export function features(state: GameState, level: Level): number[] {
   let enemyDx = 0;
   let enemyDy = 0;
   for (const enemy of state.enemies) {
-    if (!enemy.alive) {
+    if (!isActive(enemy)) {
       continue;
     }
     const distance = Math.hypot(enemy.x - player.x, enemy.y - player.y);
