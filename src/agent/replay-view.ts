@@ -38,6 +38,12 @@ export type Ghost = {
 
 export type ReplayOptions = {
   levelIndex: number;
+  /**
+   * The route the A* found, if it has been asked for: where the player would
+   * be on every frame of the fastest run there is. Drawn under the ghosts so
+   * you can see where a learned policy wanders off the best line.
+   */
+  routeToBeat?: readonly { x: number; y: number }[];
   architecture: Architecture;
   generations: GenerationRecord[];
   /** Which generation leads, and the only one shown when showAll is false. */
@@ -77,6 +83,7 @@ function makeTrails(level: Level): { canvas: HTMLCanvasElement; ctx: CanvasRende
 
 export function startReplaySession(options: ReplayOptions): ReplaySession {
   const { levelIndex, architecture, generations, leadGeneration, showAll, genomeFor } = options;
+  const routeToBeat = options.routeToBeat ?? [];
   const level = LEVELS[levelIndex];
   const policy = policyFor(architecture);
   const trails = makeTrails(level);
@@ -128,6 +135,30 @@ export function startReplaySession(options: ReplayOptions): ReplaySession {
     extendTrail(ghost, point);
   }
 
+  /** The fastest known line, with a dot for where it would be by now. */
+  function drawRouteToBeat(ctx: CanvasRenderingContext2D): void {
+    if (routeToBeat.length < 2) {
+      return;
+    }
+    ctx.strokeStyle = COLORS.routeToBeat;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    routeToBeat.forEach((point, index) => {
+      if (index === 0) {
+        ctx.moveTo(point.x, point.y);
+      } else {
+        ctx.lineTo(point.x, point.y);
+      }
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const at = routeToBeat[Math.min(frame, routeToBeat.length - 1)];
+    ctx.fillStyle = COLORS.routeToBeat;
+    ctx.fillRect(Math.round(at.x) - 2, Math.round(at.y) - 2, 4, 4);
+  }
+
   function drawLeadPath(ctx: CanvasRenderingContext2D, ghost: Ghost): void {
     if (ghost.path.length < 2) {
       return;
@@ -175,6 +206,7 @@ export function startReplaySession(options: ReplayOptions): ReplaySession {
 
       withCamera(ctx, cameraX, () => {
         drawScene(ctx, level, cameraX);
+        drawRouteToBeat(ctx);
         if (showAll) {
           const left = Math.round(cameraX);
           const width = Math.min(CANVAS_W, trails.canvas.width - left);

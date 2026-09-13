@@ -57,6 +57,9 @@ export const COLORS = {
   chartSolved: "#2f5d3a",
   chartMarker: "#ff5a5a",
   chartLabel: "#999999",
+
+  /** The line the A* found, drawn against the ghosts on the replay screen. */
+  routeToBeat: "#ff8c1a",
 } as const;
 
 /** The gap text and bars keep from the edge of the view. */

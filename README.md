@@ -192,7 +192,25 @@ Twee dingen die de bruikbaarheid bepaalden. Leren op elk frame kost vijf minuten
 
 De netwerkweergave past zich vanzelf aan: hij leest uit de opgeslagen architectuur of het een stuur-kop met drie uitgangen is of een waarde-kop met twaalf, labelt de uitgangen navenant en licht bij een waarde-kop de hoogste op in plaats van de drempels.
 
-`validate-levels` is een snelle kanarie: hij simuleert per beurt zijn mogelijke sprongen tegen de echte engine en kiest de beste, in plaats van sprongafstanden uit vaste constanten te gokken. Daardoor blijft hij kloppen als de physics veranderen; de vorige, handmatig afgestelde versie werd waardeloos zodra de getallen verschoven. Kijkt drie zetten vooruit, wat nodig werd toen de terugstuiter naar `$fc` ging, en draait in een paar seconden. De uitgebreidere controle is de getrainde agent (`npm test` speelt de opgeslagen beste genome per level opnieuw af en eist dat die het certificaat haalt).
+### A\*: niet leren maar zoeken
+
+De zes methodes hierboven leren allemaal iets. **A\*** (`src/agent/search.ts`) doet dat niet: de engine is deterministisch en volledig inspecteerbaar, dus je kunt gewoon toekomsten uitproberen en de goedkoopste houden. Zo werd de [Mario AI-competitie van 2009](https://www.researchgate.net/publication/224177833_The_2009_Mario_AI_Competition) gewonnen, door een zoeker en niet door een van de lerende inzendingen.
+
+Er wordt niets benaderd aan die toekomsten: wat de zoeker probeert is exact wat het spel doet, want het _is_ het spel dat het doet. Wat hij wel opgeeft is fijnmazigheid. Plannen per frame werkt niet: een sprong duurt tientallen frames, dus een boom die elk frame twaalf keer vertakt zit vol toekomsten die halverwege de sprong van gedachten veranderen. Een zet is daarom "ren die kant op, houd de sprongknop zo lang vast, en maak het af" (`src/agent/moves.ts`, twee richtingen × zes vasthoudtijden), precies zoals een mens het zou beschrijven. Met zetten per frame loste hij level 3 op en levels 1 en 2 niet, bij welk budget dan ook; met deze zetten alle drie.
+
+De schatting is het aantal frames dat je op zijn allerbest nog nodig hebt: de horizontale afstand gedeeld door de topsnelheid, of de klim gedeeld door de snelste sprongrij, welke van de twee groter is. Allebei zijn het ondergrenzen en geen gokken, en dáárom is de eerste oplossing die A\* vindt meteen de snelste die deze zetten toelaten.
+
+| level | A\*        | beste getrainde agent | wat het kostte              |
+| ----- | ---------- | --------------------- | --------------------------- |
+| 1     | 504 frames | 504 frames            | 880 knopen, een paar tellen |
+| 2     | 542 frames | 542 frames            | 1175 knopen                 |
+| 3     | 570 frames | 570 frames            | 647 knopen                  |
+
+Precies gelijk dus, en dat is het hele punt: waar evolutie 27 miljoen frames simuleert om die route te vinden, leest de zoeker hem in een paar seconden van het model af. Tegelijk is dat ook de grens ervan: hij heeft het model nodig. Een lerende agent heeft alleen zijn ogen en mag het spel niet vooruitspoelen.
+
+Op het herhaalscherm ligt die route als oranje stippellijn onder de spoken, met een stip erop waar de zoeker op dat frame zou staan. Zo zie je precies waar een geleerde policy van de beste lijn afdwaalt. Het zoeken gebeurt in plakjes tussen de frames door, anders slaat de pagina een halve seconde over.
+
+`validate-levels` is dezelfde zoeker als snelle kanarie: hij simuleert zijn mogelijke zetten tegen de echte engine in plaats van sprongafstanden uit vaste constanten te gokken. Daardoor blijft hij kloppen als de physics veranderen; de vorige, handmatig afgestelde versie werd waardeloos zodra de getallen verschoven. De uitgebreidere controle is de getrainde agent (`npm test` speelt de opgeslagen beste genome per level opnieuw af en eist dat die het certificaat haalt).
 
 ## Een level of sprite aanpassen
 
