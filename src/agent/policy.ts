@@ -30,6 +30,12 @@ export type Architecture = {
   readonly inputs: number;
   readonly hidden: readonly number[];
   readonly outputs: number;
+  /**
+   * Absent for the layered networks here. NEAT sets it, because its genome is
+   * a graph written into the same flat list of numbers and "no hidden layers"
+   * would otherwise read as a network with nothing in the middle.
+   */
+  readonly kind?: "neat";
 };
 
 export const DEFAULT_ARCHITECTURE: Architecture = {

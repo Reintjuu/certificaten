@@ -33,6 +33,9 @@ import { createCmaesTrainer } from "./cmaes";
 import { createMapElitesTrainer, type Archive } from "./map-elites";
 import { cellAt, drawArchive } from "./archive-view";
 import { DQN_ARCHITECTURE, createDqnTrainer } from "./dqn";
+import { NEAT_ARCHITECTURE, createNeatTrainer, isNeat, neatPolicy } from "./neat-trainer";
+import { decodeGenome } from "./neat";
+import { drawNeatNetwork } from "./neat-view";
 import { startTrainingSession, type TrainingSession } from "./training-view";
 import { startReplaySession, type Ghost, type ReplaySession } from "./replay-view";
 import { createSearch, type Search } from "./search";
@@ -148,6 +151,7 @@ function startReplay(level: number, generation: number, all: boolean): void {
   replay = startReplaySession({
     levelIndex: level,
     routeToBeat: routes[level] ?? undefined,
+    policy: isNeat(history.architecture) ? neatPolicy : undefined,
     architecture: history.architecture,
     generations: levelHistory().generations,
     leadGeneration: all ? levelHistory().bestGeneration : generation,
@@ -216,6 +220,13 @@ const TRAINING_METHODS = {
     short: "DQN",
     create: createDqnTrainer,
     architectureFor: valueHead,
+  },
+  neat: {
+    label: "NEAT (vorm groeit mee)",
+    short: "NEAT",
+    create: createNeatTrainer,
+    // NEAT decides its own hidden nodes, so the setting does not apply.
+    architectureFor: (): Architecture => NEAT_ARCHITECTURE,
   },
 } as const;
 
@@ -393,11 +404,26 @@ function renderGenerationButtons(): void {
  * The same forward pass the agent just made, shown as it happens. Weights say
  * what the network could do; weight times activation says what it is doing.
  */
+/** Which of the three output nodes is pressing something this frame. */
+function buttonsOf(input: Input): boolean[] {
+  return [input.left || input.right, input.jumpHeld, input.run];
+}
+
 function drawNetworkFor(ghost: Ghost): void {
   if (networkCtx === null) {
     return;
   }
   const level = LEVELS[levelIndex];
+  if (isNeat(history.architecture)) {
+    // A grown network has no layers to stack, so it gets its own drawing.
+    const inputs = features(ghost.run.state, level);
+    drawNeatNetwork(networkCtx, {
+      genome: decodeGenome(ghost.genome),
+      inputs,
+      pressed: buttonsOf(neatPolicy(ghost.genome, ghost.run.state, level, history.architecture)),
+    });
+    return;
+  }
   const activations = forward(ghost.genome, features(ghost.run.state, level), history.architecture);
 
   drawNetwork(networkCtx, {
@@ -467,7 +493,9 @@ function drawTraining(): void {
 
 function replayStatus(lead: Ghost): string {
   if (selected === null) {
-    return "Klik op een verbinding in het netwerk om het gewicht te zien en aan te passen.";
+    return isNeat(history.architecture)
+      ? "Dit netwerk is gegroeid: NEAT begon zonder verborgen knopen en heeft deze er zelf bij gemaakt."
+      : "Klik op een verbinding in het netwerk om het gewicht te zien en aan te passen.";
   }
   const layer = layoutOf(history.architecture)[selected.layer];
   const index = layer.weight(selected.to, selected.from);
@@ -733,7 +761,9 @@ function onNetworkClick(event: MouseEvent): void {
     playElite(cellAt(networkCtx, x, y));
     return;
   }
-  if (screen === "replay" && !showAllGenerations) {
+  // A grown network's connections are not at layer coordinates, so there is
+  // nothing to pick at: NEAT draws its graph and leaves the weights alone.
+  if (screen === "replay" && !showAllGenerations && !isNeat(history.architecture)) {
     selected = connectionAt(networkCtx, history.architecture, x, y);
   }
 }

@@ -71,7 +71,7 @@ De context wordt pas bij de eerste toetsaanslag aangemaakt, omdat browsers weige
 | `visual/`                       | De visuele regressietests: `scenes.ts` tekent elke scene met de echte renderer uit een toestand die de echte engine heeft geproduceerd, `scenes.spec.ts` schiet er een plaatje van. Niet onderdeel van de gebouwde site.                                                      |
 | `test/`                         | Unit tests (Node's ingebouwde test runner, geen extra framework), inclusief controles op leveldata en pixel-art: niets zweeft, vijanden lopen niet van hun platform, sprites zijn rechthoekig en even groot als hun hitbox.                                                   |
 
-Binnen `src/agent/` heeft elk bestand één taak: `run.ts` bepaalt wanneer een run stopt en wat hij opleverde, `policy.ts` is het netwerk, `evolution.ts` en `reinforce.ts` zijn de twee leermethodes, `training-view.ts` is één trainingssessie plus zijn scherm, `network-view.ts` tekent het netwerk, `chart.ts` de leercurve, en `console.ts` kiest alleen nog wat je bekijkt.
+Binnen `src/agent/` heeft elk bestand één taak: `run.ts` bepaalt wanneer een run stopt en wat hij opleverde, `policy.ts` is het netwerk, `evolution.ts`, `reinforce.ts`, `clone.ts`, `cmaes.ts`, `map-elites.ts`, `dqn.ts` en `neat.ts` zijn de leermethodes, `moves.ts` en `search.ts` zoeken in plaats van leren, `training-view.ts` is één trainingssessie plus zijn scherm, `network-view.ts` en `neat-view.ts` tekenen het netwerk, `chart.ts` de leercurve, en `console.ts` kiest alleen nog wat je bekijkt.
 
 Er is één entry point: `index.html`. Het titelscherm heeft twee regels, **speel** en **AI console**, en die tweede doet een dynamische import. Daardoor kost de AI-kant niets zolang je hem niet opent: het spel is 39 kB (10 kB gzipped), de console met alle trainingsdata erin 331 kB (21 kB gzipped) en die wordt pas opgehaald als je hem kiest.
 
@@ -119,7 +119,7 @@ Trainen gebeurt volledig headless en zo snel als de CPU kan, niet op speelsnelhe
 
 In de browser scoort de trainer **één kandidaat per keer** in plaats van een hele generatie, met een budget van 10ms per frame. Een generatie is 80 runs en kost een paar honderd milliseconden; die tussen twee paints proppen liet de pagina bevriezen en de generatieteller stilstaan. Nu loopt er een voortgangsbalk binnen de generatie mee.
 
-### Zes manieren van leren, en wat ze van elkaar verraden
+### Zeven manieren van leren, en wat ze van elkaar verraden
 
 Er zit ook **behaviour cloning** in (`src/agent/clone.ts`), en dat is het controle-experiment voor de hele AI-kant. Neem de beste agent die er is, schrijf op wat hij in elke toestand deed, en leer een vers netwerk dat na te doen met gewone supervised gradiëntafdaling. De leraar is een netwerk van precies dezelfde vorm, dus de leerling kán hem in principe exact evenaren.
 
@@ -162,7 +162,7 @@ Drie fouten onderweg, alle drie in code die volkomen normaal leest. Ruis op de g
 
 ### MAP-Elites: niet één beste, maar een archief van gedrag
 
-De andere vijf jagen op één beste agent. **MAP-Elites** (`src/agent/map-elites.ts`) vult een raster van gedragingen en bewaart per vakje de beste agent die zich zó gedroeg. De assen zijn hoe ver hij kwam en hoe hoog hij ooit klom, precies de twee dingen die de pogingen op het scherm van elkaar onderscheiden. Een vakje gaat alleen vooruit, nooit achteruit, dus een vreemde eend die hoog kwam maar slecht scoorde wordt niet weggefokt zoals in een gewone populatie.
+De andere zes jagen op één beste agent. **MAP-Elites** (`src/agent/map-elites.ts`) vult een raster van gedragingen en bewaart per vakje de beste agent die zich zó gedroeg. De assen zijn hoe ver hij kwam en hoe hoog hij ooit klom, precies de twee dingen die de pogingen op het scherm van elkaar onderscheiden. Een vakje gaat alleen vooruit, nooit achteruit, dus een vreemde eend die hoog kwam maar slecht scoorde wordt niet weggefokt zoals in een gewone populatie.
 
 Met hetzelfde evaluatiebudget als de GA speelt hij alle drie de levels uit (3296, 3258, 3214 tegen 3296, 3258, 3230) en levert er 70, 79 en 55 gevulde gedragsvakjes bij. Kies **archief** in het menu om het raster te zien: kleur is kwaliteit, geel omrand betekent dat die agent het certificaat haalt, en klikken speelt hem af.
 
@@ -193,9 +193,33 @@ Twee dingen die de bruikbaarheid bepaalden. Leren op elk frame kost vijf minuten
 
 De netwerkweergave past zich vanzelf aan: hij leest uit de opgeslagen architectuur of het een stuur-kop met drie uitgangen is of een waarde-kop met twaalf, labelt de uitgangen navenant en licht bij een waarde-kop de hoogste op in plaats van de drempels.
 
+### NEAT: de vorm van het netwerk evolueert mee
+
+Alle methodes hierboven trainen een vorm die ik heb gekozen: twaalf inputs, acht verborgen, drie outputs, 131 gewichten, en de enige vraag is wat die gewichten moeten zijn. **NEAT** (`src/agent/neat.ts`, naar [Stanley en Miikkulainen, 2002](https://nn.cs.utexas.edu/downloads/papers/stanley.ec02.pdf)) begint met _geen_ verborgen knopen en laat mutatie er een verbinding of een knoop bij maken. De vorm is daarmee een uitkomst in plaats van een instelling.
+
+Drie dingen maken dat het werkt, en alle drie zitten erin:
+
+- **Innovatienummers.** Een gen krijgt een stempel op het moment dat het voor het eerst ergens opduikt. Twee genomen die allebei "input 3 naar output 1" hebben laten groeien kunnen daardoor naast elkaar gelegd en gekruist worden, ook al zijn ze er los van elkaar op gekomen.
+- **Soorten.** Een verse knoop scoort bijna altijd eerst slechter voordat hij beter scoort. Genomen worden daarom gegroepeerd op gelijkenis en concurreren binnen hun groep, met de fitness gedeeld door de groepsgrootte. Zonder dat wordt elke vernieuwing weggeconcurreerd in de generatie waarin ze verschijnt en komt de topologie nooit ergens.
+- **Minimaal beginnen.** Er komt niets bij dat zichzelf niet heeft terugverdiend, en dat is waarom het eindigt met een klein netwerk in plaats van een gesnoeid groot netwerk.
+
+Een knoop toevoegen gebeurt door een verbinding doormidden te knippen: het oude gen wordt uitgezet, de eerste helft krijgt gewicht 1 en de tweede het oude gewicht. Het gedrag verschuift daarmee nauwelijks, zodat een nieuwe knoop de tijd krijgt om iets waard te worden. Een test meet dat: de outputs bewegen minder dan 0,35 door een splitsing.
+
+| level | NEAT       | gegroeid                   | gewone GA  |
+| ----- | ---------- | -------------------------- | ---------- |
+| 1     | 533 frames | 13 knopen, 38 verbindingen | 504 frames |
+| 2     | 542 frames | 15 knopen, 33 verbindingen | 542 frames |
+| 3     | 570 frames | 24 knopen, 42 verbindingen | 570 frames |
+
+Level 2 en 3 komen dus precies op de ondergrens uit, met een netwerk dat een derde van de verbindingen heeft van de vaste 131. Level 1 blijft op deze seed 29 frames achter; met drie andere seeds haalt hij daar wél 504, dus dat is pech en geen eigenschap.
+
+Het netwerk heeft geen lagen om op te stapelen, dus het krijgt een eigen tekening (`src/agent/neat-view.ts`): de diepte van een knoop wordt uit de graaf zelf afgeleid, namelijk één stap rechts van het verste dat erin voert. Gewichten aanpassen kan hier niet; er zijn geen laagcoördinaten om op te klikken.
+
+Eén ding is bewust simpeler dan het artikel: knoopnummers worden per genome uitgedeeld in plaats van globaal. Dat is prima zolang een lijn afstamming houdt, maar het betekent dat kruising tussen twee ver uit elkaar gegroeide soorten knoopnummers kan verwarren. Dat is een bekende hoek van het huis, geen ongeluk.
+
 ### A\*: niet leren maar zoeken
 
-De zes methodes hierboven leren allemaal iets. **A\*** (`src/agent/search.ts`) doet dat niet: de engine is deterministisch en volledig inspecteerbaar, dus je kunt gewoon toekomsten uitproberen en de goedkoopste houden. Zo werd de [Mario AI-competitie van 2009](https://www.researchgate.net/publication/224177833_The_2009_Mario_AI_Competition) gewonnen, door een zoeker en niet door een van de lerende inzendingen.
+De zeven methodes hierboven leren allemaal iets. **A\*** (`src/agent/search.ts`) doet dat niet: de engine is deterministisch en volledig inspecteerbaar, dus je kunt gewoon toekomsten uitproberen en de goedkoopste houden. Zo werd de [Mario AI-competitie van 2009](https://www.researchgate.net/publication/224177833_The_2009_Mario_AI_Competition) gewonnen, door een zoeker en niet door een van de lerende inzendingen.
 
 Er wordt niets benaderd aan die toekomsten: wat de zoeker probeert is exact wat het spel doet, want het _is_ het spel dat het doet. Wat hij wel opgeeft is fijnmazigheid. Plannen per frame werkt niet: een sprong duurt tientallen frames, dus een boom die elk frame twaalf keer vertakt zit vol toekomsten die halverwege de sprong van gedachten veranderen. Een zet is daarom "ren die kant op, houd de sprongknop zo lang vast, en maak het af" (`src/agent/moves.ts`, twee richtingen × zes vasthoudtijden), precies zoals een mens het zou beschrijven. Met zetten per frame loste hij level 3 op en levels 1 en 2 niet, bij welk budget dan ook; met deze zetten alle drie.
 

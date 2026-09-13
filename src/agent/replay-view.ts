@@ -5,7 +5,7 @@
 import { CANVAS_H, CANVAS_W, LEVELS, type Level } from "../engine";
 import { COLORS, SCREEN_MARGIN, drawEntities, drawScene, withCamera } from "../render";
 import { drawText } from "../font";
-import { policyFor, type Architecture, type Genome } from "./policy";
+import { policyFor, type Architecture, type Genome, type Policy } from "./policy";
 import { RunOutcome, advanceRun, startRun, type Run } from "./run";
 import type { GenerationRecord } from "./evolution";
 
@@ -51,6 +51,8 @@ export type ReplayOptions = {
   showAll: boolean;
   /** Lets an edited genome stand in for the recorded one. */
   genomeFor: (record: GenerationRecord, index: number) => Genome;
+  /** Overrides how a genome is read, which is what a grown network needs. */
+  policy?: Policy;
 };
 
 export type ReplaySession = {
@@ -85,7 +87,7 @@ export function startReplaySession(options: ReplayOptions): ReplaySession {
   const { levelIndex, architecture, generations, leadGeneration, showAll, genomeFor } = options;
   const routeToBeat = options.routeToBeat ?? [];
   const level = LEVELS[levelIndex];
-  const policy = policyFor(architecture);
+  const policy = options.policy ?? policyFor(architecture);
   const trails = makeTrails(level);
 
   const chosen = showAll ? generations : [generations[leadGeneration] ?? generations[generations.length - 1]];
