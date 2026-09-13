@@ -1,0 +1,23 @@
+<!--
+  The stage for the visual regression tests. Every scene is drawn by the real
+  renderer from a state the real engine produced, and nothing here runs on a
+  clock: the test asks for a scene by name, this steps the engine exactly that
+  many frames and draws once. A screenshot is then a function of the code
+  alone, which is the only way a pixel comparison can mean anything.
+
+  It is deliberately not part of the built site. Vite serves it in dev, which
+  is what the tests run against, and only index.html is bundled.
+-->
+<title>Scenes</title>
+<style>
+  body {
+    margin: 0;
+    background: #101010;
+  }
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+  }
+</style>
+<canvas id="stage" width="480" height="270"></canvas>
+<script type="module" src="./scenes.ts"></script>

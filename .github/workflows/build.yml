@@ -37,6 +37,22 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # The scenes are drawn on demand rather than on a clock, so the
+      # comparison is exact: any difference at all is a change somebody made.
+      - name: Install the browser for the visual tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Visual regression tests
+        run: npm run test:visual
+
+      - name: Keep the differences when they fail
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diff
+          path: test-results/
+          retention-days: 7
+
       - name: Build
         run: npm run build:github-pages
 

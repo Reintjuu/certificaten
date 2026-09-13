@@ -13,10 +13,12 @@
     "train-agent": "tsx src/agent/train.ts",
     "test": "node --import tsx --test test/*.test.ts",
     "lint": "prettier --check . && eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test:visual": "playwright test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^26.5.0",
     "eslint": "^10.10.0",
     "prettier": "^3.9.6",

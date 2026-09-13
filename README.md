@@ -68,6 +68,7 @@ De context wordt pas bij de eerste toetsaanslag aangemaakt, omdat browsers weige
 | `src/sprites.ts`, `src/font.ts` | Origineel handgetekende pixel-art en het bitmap-font.                                                                                                                                                                                                                         |
 | `src/main.ts`                   | Dunne browser-shell: toetsen → `Input`, loop, schermen. Geen physics.                                                                                                                                                                                                         |
 | `src/agent/`                    | De test- en AI-tooling. Eigen map met een eigen richting: hij importeert de engine, de levels en de renderer, maar niets in `src/` importeert ooit iets uit `src/agent/`, behalve de lazy import van de console.                                                              |
+| `visual/`                       | De visuele regressietests: `scenes.ts` tekent elke scene met de echte renderer uit een toestand die de echte engine heeft geproduceerd, `scenes.spec.ts` schiet er een plaatje van. Niet onderdeel van de gebouwde site.                                                      |
 | `test/`                         | Unit tests (Node's ingebouwde test runner, geen extra framework), inclusief controles op leveldata en pixel-art: niets zweeft, vijanden lopen niet van hun platform, sprites zijn rechthoekig en even groot als hun hitbox.                                                   |
 
 Binnen `src/agent/` heeft elk bestand één taak: `run.ts` bepaalt wanneer een run stopt en wat hij opleverde, `policy.ts` is het netwerk, `evolution.ts` en `reinforce.ts` zijn de twee leermethodes, `training-view.ts` is één trainingssessie plus zijn scherm, `network-view.ts` tekent het netwerk, `chart.ts` de leercurve, en `console.ts` kiest alleen nog wat je bekijkt.
@@ -211,6 +212,16 @@ Precies gelijk dus, en dat is het hele punt: waar evolutie 27 miljoen frames sim
 Op het herhaalscherm ligt die route als oranje stippellijn onder de spoken, met een stip erop waar de zoeker op dat frame zou staan. Zo zie je precies waar een geleerde policy van de beste lijn afdwaalt. Het zoeken gebeurt in plakjes tussen de frames door, anders slaat de pagina een halve seconde over.
 
 `validate-levels` is dezelfde zoeker als snelle kanarie: hij simuleert zijn mogelijke zetten tegen de echte engine in plaats van sprongafstanden uit vaste constanten te gokken. Daardoor blijft hij kloppen als de physics veranderen; de vorige, handmatig afgestelde versie werd waardeloos zodra de getallen verschoven. De uitgebreidere controle is de getrainde agent (`npm test` speelt de opgeslagen beste genome per level opnieuw af en eist dat die het certificaat haalt).
+
+## Visuele regressietests
+
+Alles hierboven test getallen. Een sprite die twee pixels opschuift, een blok dat achter een platform verdwijnt of een letter die van het scherm valt haalt geen enkele assertie, en dat zijn nou precies de fouten die je meteen ziet als je kijkt. Daarom staat er een tweede suite naast: `npm run test:visual` tekent een reeks scenes en vergelijkt ze **pixel voor pixel** met vastgelegde plaatjes in `visual/scenes.spec.ts-snapshots/`.
+
+Die vergelijking kan alleen streng zijn (`maxDiffPixels: 0`) omdat er geen klok aan te pas komt. Een scene wordt niet "het spel een seconde laten lopen en dan kijken" maar "stap de engine precies 200 frames en teken één keer", dus een plaatje is puur een functie van de code. Er wordt ook niets nagebouwd: de scenes gebruiken dezelfde `drawScene`, `drawEntities` en `Menu` als het spel, want een test van een nagetekende titelbalk test niets.
+
+De testpagina (`visual/scenes.html`) hoort bij de tests en niet bij het spel: vite serveert hem in dev, en alleen `index.html` wordt gebouwd. In CI draait dit als aparte stap, met de verschilplaatjes als artifact wanneer het misgaat.
+
+Verandert er bewust iets aan hoe het spel eruitziet, dan is dat `npm run test:visual -- --update-snapshots`, even kijken of het klopt, en de nieuwe plaatjes committen.
 
 ## Een level of sprite aanpassen
 
