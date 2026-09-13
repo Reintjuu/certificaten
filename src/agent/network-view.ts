@@ -5,15 +5,17 @@
 import { COLORS as GAME_COLORS } from "../render";
 import {
   FEATURE_LABELS,
-  OUTPUT_LABELS,
   layerSizes,
   layoutOf,
+  outputLabelsFor,
   type Architecture,
   type Genome,
 } from "./policy";
 
 const LEFT_MARGIN = 132;
-const RIGHT_MARGIN = 124;
+/** Room for the output names, widened to whatever they actually need. */
+const MIN_RIGHT_MARGIN = 124;
+const LABEL_GAP = 14;
 const TOP_MARGIN = 18;
 const BOTTOM_MARGIN = 14;
 const NODE_RADIUS = 7;
@@ -45,9 +47,19 @@ export type NetworkScene = {
 
 type Geometry = { columns: { x: number; nodes: number[] }[] };
 
-function geometryFor(architecture: Architecture, width: number, height: number): Geometry {
+/**
+ * Where the nodes sit. Taken from the drawing context so that picking and
+ * drawing can never disagree: the output column is placed to fit its names,
+ * and a value head's names are far longer than a control head's.
+ */
+function geometryFor(ctx: CanvasRenderingContext2D, architecture: Architecture): Geometry {
+  const { width, height } = ctx.canvas;
+  ctx.font = LABEL_FONT;
+  const widest = Math.max(...outputLabelsFor(architecture).map((label) => ctx.measureText(label).width));
+  const rightMargin = Math.max(MIN_RIGHT_MARGIN, widest + LABEL_GAP * 2);
+
   const sizes = layerSizes(architecture);
-  const span = width - LEFT_MARGIN - RIGHT_MARGIN;
+  const span = width - LEFT_MARGIN - rightMargin;
   const usable = height - TOP_MARGIN - BOTTOM_MARGIN;
 
   return {
@@ -75,7 +87,8 @@ function sameConnection(a: Connection | null, b: Connection): boolean {
 
 export function drawNetwork(ctx: CanvasRenderingContext2D, scene: NetworkScene): void {
   const { width, height } = ctx.canvas;
-  const { columns } = geometryFor(scene.architecture, width, height);
+  const outputLabels = outputLabelsFor(scene.architecture);
+  const { columns } = geometryFor(ctx, scene.architecture);
   const layers = layoutOf(scene.architecture);
 
   ctx.fillStyle = COLORS.background;
@@ -111,7 +124,6 @@ export function drawNetwork(ctx: CanvasRenderingContext2D, scene: NetworkScene):
     }
   });
 
-  ctx.font = LABEL_FONT;
   columns.forEach((column, index) => {
     const values = scene.activations?.[index] ?? null;
     column.nodes.forEach((y, node) => {
@@ -132,7 +144,7 @@ export function drawNetwork(ctx: CanvasRenderingContext2D, scene: NetworkScene):
       if (index === columns.length - 1) {
         ctx.fillStyle = scene.pressed[node] ? COLORS.pressed : COLORS.label;
         ctx.textAlign = "left";
-        ctx.fillText(OUTPUT_LABELS[node] ?? `uit ${node}`, column.x + NODE_RADIUS + 6, y + 4);
+        ctx.fillText(outputLabels[node] ?? `uit ${node}`, column.x + NODE_RADIUS + 6, y + 4);
       }
     });
   });
@@ -151,13 +163,12 @@ function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: n
 
 /** Which connection a click landed on, if any. */
 export function connectionAt(
+  ctx: CanvasRenderingContext2D,
   architecture: Architecture,
-  width: number,
-  height: number,
   x: number,
   y: number
 ): Connection | null {
-  const { columns } = geometryFor(architecture, width, height);
+  const { columns } = geometryFor(ctx, architecture);
   const layers = layoutOf(architecture);
   let closest: Connection | null = null;
   let closestDistance = PICK_DISTANCE;

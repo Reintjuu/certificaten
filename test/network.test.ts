@@ -1,7 +1,12 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
+  ACTIONS,
   DEFAULT_ARCHITECTURE,
+  chosenOutputs,
+  isValueHead,
+  outputLabelsFor,
+  policyFor,
   FEATURE_LABELS,
   GENOME_SIZE,
   INPUT_SIZE,
@@ -16,6 +21,8 @@ import {
 } from "../src/agent/policy";
 import { checkHistory, type TrainingHistory } from "../src/agent/evolution";
 import { parseHiddenLayers } from "../src/agent/console";
+import { DQN_ARCHITECTURE } from "../src/agent/dqn";
+import { LEVELS, createPlayingState } from "../src/engine";
 
 describe("the shape of the network", () => {
   test("every input and output has a name, in the order the features are built", () => {
@@ -129,5 +136,41 @@ describe("the hidden layers you can type in", () => {
     for (const bad of ["nonsense", "8,", "0", "-4", "2.5", "8 6", "9999"]) {
       assert.equal(parseHiddenLayers(bad), null, `"${bad}" should not parse`);
     }
+  });
+});
+
+describe("two kinds of output head", () => {
+  test("a control head reads three axes, a value head one per button combination", () => {
+    assert.equal(isValueHead(DEFAULT_ARCHITECTURE), false);
+    assert.equal(isValueHead(DQN_ARCHITECTURE), true);
+    assert.equal(ACTIONS.length, 12, "three directions times jump times run");
+    assert.equal(outputLabelsFor(DEFAULT_ARCHITECTURE).length, DEFAULT_ARCHITECTURE.outputs);
+    assert.equal(outputLabelsFor(DQN_ARCHITECTURE).length, ACTIONS.length);
+  });
+
+  test("a value head lights the one output it acted on", () => {
+    const values = [0, 0.4, -0.2, 0.9, 0.1, 0, 0, 0, 0, 0, 0, 0];
+    const chosen = chosenOutputs(values, DQN_ARCHITECTURE);
+    assert.equal(chosen.filter(Boolean).length, 1);
+    assert.equal(chosen[3], true, "the largest value is the action taken");
+  });
+
+  test("the policy for a shape matches how that shape is read", () => {
+    // What keeps a replay honest: a genome trained as a value head has to be
+    // replayed by taking the largest value, not by thresholding three axes.
+    const level = LEVELS[0];
+    const state = createPlayingState(0);
+    const values = randomGenome(undefined, DQN_ARCHITECTURE);
+    const acted = policyFor(DQN_ARCHITECTURE)(values, state, level, DQN_ARCHITECTURE);
+    assert.ok(
+      ACTIONS.some(
+        (action) =>
+          action.left === acted.left &&
+          action.right === acted.right &&
+          action.jumpHeld === acted.jumpHeld &&
+          action.run === acted.run
+      ),
+      "a value head can only produce one of the listed combinations"
+    );
   });
 });

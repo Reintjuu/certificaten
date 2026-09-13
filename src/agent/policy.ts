@@ -2,7 +2,7 @@
 // library) mapping the game state to a movement decision. Shared by the
 // trainer and the replay viewer so a recorded genome always behaves the same
 // in both.
-import { CANVAS_W, CANVAS_H, PHYSICS, type GameState, type Input, type Level } from "../engine";
+import { CANVAS_W, CANVAS_H, NO_INPUT, PHYSICS, type GameState, type Input, type Level } from "../engine";
 import type { Random } from "./random";
 
 /** How far an output must swing before it counts as pressing a direction. */
@@ -154,6 +154,72 @@ export const FEATURE_LABELS = [
 ] as const;
 
 export const OUTPUT_LABELS = ["links / rechts", "springen", "rennen"] as const;
+
+/**
+ * How a genome's outputs are meant to be read. A control head has one output
+ * per axis of the controller; a value head has one per button combination and
+ * the largest wins. Which it is follows from the architecture, which is
+ * already recorded beside every genome, so nothing else has to carry it.
+ */
+export type Policy = (genome: Genome, state: GameState, level: Level, architecture: Architecture) => Input;
+
+export function isValueHead(architecture: Architecture): boolean {
+  return architecture.outputs !== OUTPUT_SIZE;
+}
+
+/**
+ * Every button combination the game distinguishes. A value head has one output
+ * per entry and the largest wins, which is what lets Q-learning choose without
+ * a threshold to fall foul of.
+ */
+export const ACTIONS: Input[] = [-1, 0, 1].flatMap((direction) =>
+  [false, true].flatMap((jumpHeld) =>
+    [false, true].map((run) => ({
+      ...NO_INPUT,
+      left: direction === -1,
+      right: direction === 1,
+      jumpHeld,
+      jumpPressed: jumpHeld,
+      run,
+    }))
+  )
+);
+
+const ACTION_LABELS = ACTIONS.map(
+  (action) =>
+    [
+      action.left ? "links" : "",
+      action.right ? "rechts" : "",
+      action.jumpHeld ? "spring" : "",
+      action.run ? "ren" : "",
+    ]
+      .filter(Boolean)
+      .join(" + ") || "niets"
+);
+
+export function outputLabelsFor(architecture: Architecture): readonly string[] {
+  return isValueHead(architecture) ? ACTION_LABELS : OUTPUT_LABELS;
+}
+
+/** Which output the policy acted on, for showing what the network chose. */
+export function chosenOutputs(outputs: number[], architecture: Architecture): boolean[] {
+  if (isValueHead(architecture)) {
+    const best = outputs.reduce((at, value, i) => (value > outputs[at] ? i : at), 0);
+    return outputs.map((_, i) => i === best);
+  }
+  const [horizontal, jump, run] = outputs;
+  return [Math.abs(horizontal) > MOVE_THRESHOLD, jump > 0, run > 0];
+}
+
+export const actionFromValues: Policy = (genome, state, level, architecture) => {
+  const outputs = outputsOf(forward(genome, features(state, level), architecture));
+  return ACTIONS[outputs.reduce((at, value, i) => (value > outputs[at] ? i : at), 0)];
+};
+
+/** How a genome of this shape is meant to be read. */
+export function policyFor(architecture: Architecture): Policy {
+  return isValueHead(architecture) ? actionFromValues : actionFor;
+}
 
 /**
  * How far ahead the terrain probes look, in pixels. Roughly a running jump's

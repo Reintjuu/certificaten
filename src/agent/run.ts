@@ -11,7 +11,7 @@ import {
   type GameState,
   type Input,
 } from "../engine";
-import { DEFAULT_ARCHITECTURE, actionFor, type Architecture, type Genome } from "./policy";
+import { DEFAULT_ARCHITECTURE, actionFor, type Architecture, type Genome, type Policy } from "./policy";
 
 /**
  * A hard ceiling on one attempt, in frames (30s at 60fps). Crossing a 1440px
@@ -117,12 +117,13 @@ export function advanceRun(
   run: Run,
   genome: Genome,
   levelIndex: number,
-  architecture: Architecture = DEFAULT_ARCHITECTURE
+  architecture: Architecture = DEFAULT_ARCHITECTURE,
+  policy: Policy = actionFor
 ): Run {
   if (run.outcome !== RunOutcome.Running) {
     return run;
   }
-  return stepRun(run, actionFor(genome, run.state, LEVELS[levelIndex], architecture), levelIndex);
+  return stepRun(run, policy(genome, run.state, LEVELS[levelIndex], architecture), levelIndex);
 }
 
 export type Point = { x: number; y: number };
@@ -144,12 +145,13 @@ export function finishRun(
   genome: Genome,
   levelIndex: number,
   architecture: Architecture = DEFAULT_ARCHITECTURE,
-  path?: Point[]
+  path?: Point[],
+  policy: Policy = actionFor
 ): Run {
   let run = startRun(levelIndex);
   path?.push(pathPointOf(run));
   while (run.outcome === RunOutcome.Running) {
-    run = advanceRun(run, genome, levelIndex, architecture);
+    run = advanceRun(run, genome, levelIndex, architecture, policy);
     if (path !== undefined && run.frames % PATH_SAMPLE_EVERY === 0) {
       path.push(pathPointOf(run));
     }

@@ -101,7 +101,7 @@ Trainen gebeurt volledig headless en zo snel als de CPU kan, niet op speelsnelhe
 
 In de browser scoort de trainer **één kandidaat per keer** in plaats van een hele generatie, met een budget van 10ms per frame. Een generatie is 80 runs en kost een paar honderd milliseconden; die tussen twee paints proppen liet de pagina bevriezen en de generatieteller stilstaan. Nu loopt er een voortgangsbalk binnen de generatie mee.
 
-### Drie manieren van leren, en wat ze van elkaar verraden
+### Vier manieren van leren, en wat ze van elkaar verraden
 
 Er zit ook **behaviour cloning** in (`src/agent/clone.ts`), en dat is het controle-experiment voor de hele AI-kant. Neem de beste agent die er is, schrijf op wat hij in elke toestand deed, en leer een vers netwerk dat na te doen met gewone supervised gradiëntafdaling. De leraar is een netwerk van precies dezelfde vorm, dus de leerling kán hem in principe exact evenaren.
 
@@ -139,6 +139,18 @@ Ik heb geprobeerd dat laatste stuk alsnog te halen: ruis vasthouden over meerder
 Die eigenschap staat als test in `test/reinforce.test.ts`, samen met een numerieke controle van de backpropagatie tegen eindige differenties. De gradiënt is dus aantoonbaar correct; het ging mis in wat ik hem te eten gaf.
 
 Drie fouten onderweg, alle drie in code die volkomen normaal leest. Ruis op de gewogen som in plaats van op de uitgang: zodra die som voorbij ongeveer twee komt is tanh vlak en zijn alle episodes in een batch letterlijk identiek. Een baseline per framenummer onder een return-to-go die telescopeert, waardoor vooruitgang zichzelf bestrafte. En de gesamplede beste episode opslaan naast het hebzuchtige genome, waardoor de grafiek voortgang meldde die de agent niet had.
+
+### Q-learning, de eerlijke tweede kans
+
+De policy gradient stuurt drie continue getallen door drempels, en juist daar komt de trap vandaan. **Q-learning** (`src/agent/dqn.ts`) heeft dat probleem per constructie niet: het netwerk schat wat elk van de **twaalf knopcombinaties** waard is en de agent neemt de hoogste. Elke verandering die de volgorde omgooit verandert de actie, en elke verandering die dat niet doet is ook echt zonder gevolg. Compleet met replay buffer, een bevroren kopie voor de doelwaarden en epsilon die van 1 naar 0,05 loopt.
+
+Het werkt beter dan REINFORCE en nog steeds niet goed genoeg: level 1 komt op **−104**, het beste dat een lerende methode hier haalt, en op het platform bij het certificaat staan is −112. Hij staat er dus bovenop en pakt hem niet.
+
+Eén getal maakte daar het meeste verschil, en het was niet de leersnelheid. Met de gebruikelijke discount van 0,99 is een beloning 400 frames verderop nog 0,018 waard: de agent kán het certificaat vanaf de start niet zien. Op 0,999 reikt de horizon over het hele level en ging het van −143 naar −104.
+
+Twee dingen die de bruikbaarheid bepaalden. Leren op elk frame kost vijf minuten per level, wat in een browser niet kan; net als in de oorspronkelijke DQN-publicatie gebeurt het elke vierde frame, en dat scheelt een factor vier zonder kwaliteitsverlies. En een episode in één keer uitspelen blokkeerde het frame veel langer dan het budget, wat de pagina naar 34fps trok; nu gaat er hooguit 60 frames per aanroep doorheen en blijft het op 61.
+
+De netwerkweergave past zich vanzelf aan: hij leest uit de opgeslagen architectuur of het een stuur-kop met drie uitgangen is of een waarde-kop met twaalf, labelt de uitgangen navenant en licht bij een waarde-kop de hoogste op in plaats van de drempels.
 
 `validate-levels` is een snelle kanarie: hij simuleert per beurt zijn mogelijke sprongen tegen de echte engine en kiest de beste, in plaats van sprongafstanden uit vaste constanten te gokken. Daardoor blijft hij kloppen als de physics veranderen; de vorige, handmatig afgestelde versie werd waardeloos zodra de getallen verschoven. Kijkt drie zetten vooruit, wat nodig werd toen de terugstuiter naar `$fc` ging, en draait in een paar seconden. De uitgebreidere controle is de getrainde agent (`npm test` speelt de opgeslagen beste genome per level opnieuw af en eist dat die het certificaat haalt).
 

@@ -25,7 +25,9 @@ import {
   forward,
   genomeSize,
   layoutOf,
+  chosenOutputs,
   outputsOf,
+  policyFor,
   roundWeight,
   type Architecture,
   type Genome,
@@ -33,6 +35,7 @@ import {
 import { connectionAt, drawNetwork, drawWeightMap, type Connection } from "./network-view";
 import { createReinforceTrainer } from "./reinforce";
 import { createCloneTrainerUsing } from "./clone";
+import { DQN_ARCHITECTURE, createDqnTrainer } from "./dqn";
 import { startTrainingSession, type TrainingSession } from "./training-view";
 
 type Screen = "menu" | "replay" | "training" | "weights";
@@ -154,13 +157,37 @@ function teacherFor(level: number): Genome {
  * `label` names the method in the dropdown, `short` fits the training screen's
  * header, where the full name ran over the progress bar.
  */
+/**
+ * `architectureFor` lets a method choose its own output layer: a value head
+ * has one output per button combination where a control head has three.
+ */
+const controlHead = (hidden: readonly number[]): Architecture => ({ ...DEFAULT_ARCHITECTURE, hidden });
+const valueHead = (hidden: readonly number[]): Architecture => ({ ...DQN_ARCHITECTURE, hidden });
+
 const TRAINING_METHODS = {
-  evolution: { label: "evolutie", short: "EVOLUTIE", create: createTrainer },
-  gradient: { label: "gradient (REINFORCE)", short: "GRADIENT", create: createReinforceTrainer },
+  evolution: {
+    label: "evolutie",
+    short: "EVOLUTIE",
+    create: createTrainer,
+    architectureFor: controlHead,
+  },
+  gradient: {
+    label: "gradient (REINFORCE)",
+    short: "GRADIENT",
+    create: createReinforceTrainer,
+    architectureFor: controlHead,
+  },
   clone: {
     label: "nadoen (behaviour cloning)",
     short: "NADOEN",
     create: createCloneTrainerUsing(teacherFor),
+    architectureFor: controlHead,
+  },
+  qlearning: {
+    label: "Q-learning (DQN)",
+    short: "DQN",
+    create: createDqnTrainer,
+    architectureFor: valueHead,
   },
 } as const;
 
@@ -168,11 +195,14 @@ type Method = keyof typeof TRAINING_METHODS;
 
 let method: Method = "evolution";
 
-function startTraining(architecture: Architecture = history.architecture, chosen: Method = method): void {
+function startTraining(
+  hidden: readonly number[] = history.architecture.hidden,
+  chosen: Method = method
+): void {
   screen = "training";
   method = chosen;
-  const { create, short } = TRAINING_METHODS[chosen];
-  training = startTrainingSession(create, short, architecture);
+  const { create, short, architectureFor } = TRAINING_METHODS[chosen];
+  training = startTrainingSession(create, short, architectureFor(hidden));
   generationsEl.replaceChildren();
 }
 
@@ -381,13 +411,12 @@ function drawNetworkFor(ghost: Ghost): void {
   }
   const level = LEVELS[levelIndex];
   const activations = forward(ghost.genome, features(ghost.run.state, level), history.architecture);
-  const [horizontal, jump, run] = outputsOf(activations);
 
   drawNetwork(networkCtx, {
     genome: ghost.genome,
     architecture: history.architecture,
     activations,
-    pressed: [Math.abs(horizontal) > 0.2, jump > 0, run > 0],
+    pressed: chosenOutputs(outputsOf(activations), history.architecture),
     selected,
   });
 }
@@ -479,7 +508,13 @@ function advanceGhost(ghost: Ghost): void {
   }
   // Re-running the stored genome through the same deterministic engine
   // reproduces that generation's run exactly: the weights are the recording.
-  ghost.run = advanceRun(ghost.run, ghost.genome, levelIndex, history.architecture);
+  ghost.run = advanceRun(
+    ghost.run,
+    ghost.genome,
+    levelIndex,
+    history.architecture,
+    policyFor(history.architecture)
+  );
   if (frame % GHOST_PATH_SAMPLE_EVERY !== 0) {
     return;
   }
@@ -705,7 +740,7 @@ function buildArchitectureRow(): HTMLElement {
       statusEl.textContent = `"${input.value}" is geen lijst positieve gehele getallen, bijvoorbeeld 8 of 12,6.`;
       return;
     }
-    startTraining({ ...DEFAULT_ARCHITECTURE, hidden }, methodSelect.value as Method);
+    startTraining(hidden, methodSelect.value as Method);
   };
 
   row.append(label, methodLabel, train);
@@ -763,7 +798,7 @@ function onNetworkClick(event: MouseEvent): void {
   const bounds = networkCanvas.getBoundingClientRect();
   const x = (event.clientX - bounds.left) * (networkCanvas.width / bounds.width);
   const y = (event.clientY - bounds.top) * (networkCanvas.height / bounds.height);
-  selected = connectionAt(history.architecture, networkCanvas.width, networkCanvas.height, x, y);
+  selected = networkCtx === null ? null : connectionAt(networkCtx, history.architecture, x, y);
 }
 
 const WEIGHT_STEP = 0.05;
@@ -774,7 +809,13 @@ function nudgeSelectedWeight(direction: number): void {
     return;
   }
   const recorded = shippedGenome();
-  recordedFrames ??= finishRun(recorded, levelIndex, history.architecture).frames;
+  recordedFrames ??= finishRun(
+    recorded,
+    levelIndex,
+    history.architecture,
+    undefined,
+    policyFor(history.architecture)
+  ).frames;
   const index = layoutOf(history.architecture)[selected.layer].weight(selected.to, selected.from);
   const genome = [...(editedGenome ?? recorded)];
   genome[index] = roundWeight(genome[index] + direction * WEIGHT_STEP);
