@@ -12,6 +12,8 @@ export const KEY_BINDINGS = {
   reset: new Set(["r"]),
   /** Toggles the frame rate readout. */
   frameRate: new Set(["f"]),
+  /** Silences the game. */
+  mute: new Set(["m"]),
   menuUp: new Set(["arrowup", "w"]),
   menuDown: new Set(["arrowdown", "s"]),
 } as const;

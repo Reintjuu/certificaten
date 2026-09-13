@@ -9,10 +9,12 @@ import {
   step,
   type GameState,
 } from "./engine";
-import { COLORS, drawFrameRate, drawScene, drawEntities, withCamera } from "./render";
+import { COLORS, SCREEN_MARGIN, drawFrameRate, drawScene, drawEntities, withCamera } from "./render";
 import { drawText, drawTextCentered, wrapText } from "./font";
 import { Menu } from "./menu";
 import { createFrameRate } from "./fps";
+import { eventsBetween } from "./sound-events";
+import { isMuted, play, toggleMuted, unlockSound } from "./sound";
 import { KEY_BINDINGS, consumesKey, readInput, readMenuInput } from "./input";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game")!;
@@ -45,10 +47,15 @@ addEventListener("keydown", (event) => {
   }
   // The operating system repeats keydown while a key is held; that is not a
   // new press, and counting it as one would re-trigger the jump on landing.
+  // Browsers will not start audio until the page has been interacted with.
+  unlockSound();
   if (!event.repeat) {
     pressedKeys.add(key);
     if (KEY_BINDINGS.frameRate.has(key)) {
       showFrameRate = !showFrameRate;
+    }
+    if (KEY_BINDINGS.mute.has(key)) {
+      toggleMuted();
     }
   }
   heldKeys.add(key);
@@ -231,15 +238,22 @@ function loop(): void {
   if (!running) {
     return;
   }
+  const before = state;
   if (state.phase === "title") {
     advanceTitle();
   } else {
     state = step(state, readInput(heldKeys, pressedKeys));
   }
+  for (const event of eventsBetween(before, state)) {
+    play(event);
+  }
   draw(state);
   frameRate.record();
   if (showFrameRate) {
     drawFrameRate(ctx, frameRate.perSecond);
+  }
+  if (isMuted()) {
+    drawText(ctx, "GELUID UIT", SCREEN_MARGIN, CANVAS_H - 44, 1, COLORS.faintText);
   }
   pressedKeys.clear();
   requestAnimationFrame(loop);

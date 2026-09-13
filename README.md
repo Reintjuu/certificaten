@@ -12,7 +12,7 @@ npm run lint     # prettier + eslint
 npm run format   # prettier --write
 ```
 
-Besturing: pijltjes/A-D bewegen, **Shift rennen**, spatie/W springen (kort tikken = lage hop, ingedrukt houden = volle sprong), **pijl omlaag/S bukken** (alleen groot), R reset het huidige level, F toont de framerate.
+Besturing: pijltjes/A-D bewegen, **Shift rennen**, spatie/W springen (kort tikken = lage hop, ingedrukt houden = volle sprong), **pijl omlaag/S bukken** (alleen groot), R reset het huidige level, F toont de framerate, M zet het geluid uit.
 
 ## Physics
 
@@ -38,6 +38,16 @@ Je begint klein. Een paddenstoel maakt je groot (`BoundBoxCtrlData`: 24px hoog i
 Twee details die vaak verkeerd worden nagemaakt: SMB1 varieert de spronghoogte door bij het loslaten van de knop naar de _zware valzwaartekracht_ om te schakelen (niet door de opwaartse snelheid af te kappen), en de sprongboog wordt gekozen uit een tabel van vijf rijen op basis van je snelheid bij het afzetten: hard rennen springt hoger én strakker.
 
 **Coyote time zit er bewust niet in.** Het origineel heeft het niet: springen vereist `Player_State == 0`. Dat toevoegen zou de besturing moderner maken, maar aantoonbaar on-NES.
+
+## Geluid
+
+De NES had twee pulse-kanalen, een triangle en een ruisgenerator, en alles wat het apparaat ooit zei kwam daaruit. `src/sound.ts` bouwt diezelfde vier stemmen met WebAudio: de smalle pulse-breedtes (12,5% en 25%) bestaan niet als browser-oscillator en worden uit hun Fourierreeks opgebouwd, want juist die maken dat een pulse-kanaal klinkt als een pulse-kanaal.
+
+**De melodieën uit de ROM zijn niet nagemaakt.** Die zijn Nintendo's compositie. Wat geleend is, is de machine: dezelfde vier stemmen, dezelfde harde envelopes, hetzelfde gebrek aan alles daartussen. De effecten zijn voor dit spel geschreven, net zoals de pixel-art voor dit spel getekend is.
+
+Wélke gebeurtenis er klinkt is aparte, pure logica in `src/sound-events.ts`: die vergelijkt twee frames spelstaat en zegt wat er gebeurde. De engine blijft dus zelf niets van geluid weten. Dat is ook wat het testbaar maakt, want een WebAudio-context maakt herrie en geen assertions; springen tegen van een richel vallen uit elkaar houden is wél te testen, en dat gebeurt.
+
+De context wordt pas bij de eerste toetsaanslag aangemaakt, omdat browsers weigeren geluid te starten voordat er interactie is geweest. **M** zet alles uit.
 
 ## Structuur
 
