@@ -90,14 +90,99 @@
       #console #network {
         cursor: crosshair;
       }
+
+      /* The on-screen pad, which only exists on a device you play with your
+         thumbs. It is laid over the picture rather than under it, because a
+         phone in landscape has no room to spare below. */
+      #touch {
+        display: none;
+      }
+      body.touch {
+        overflow: hidden;
+        touch-action: none;
+        overscroll-behavior: none;
+      }
+      body.touch .wrap {
+        padding: 0;
+        gap: 0;
+      }
+      /* As large as fits: the whole width in portrait, the whole height in
+         landscape, which is where 16:9 runs out of room first. */
+      body.touch canvas#game {
+        width: min(100vw, calc(100vh * 16 / 9));
+        border: 0;
+      }
+      body.touch #controls {
+        font-size: 11px;
+        padding: 2px 8px;
+        text-align: center;
+      }
+      body.touch .wrap {
+        min-height: 100vh;
+        justify-content: center;
+      }
+      body.touch #touch {
+        display: block;
+        position: fixed;
+        inset: auto 0 0 0;
+        height: 50vmin;
+        pointer-events: none;
+      }
+      /* Hidden while the pad has nothing to drive: the title screen and the
+         console are tapped and clicked, not steered. */
+      body.touch #touch[hidden] {
+        display: none;
+      }
+      /* Sized in vmin so a thumb finds the same button in either
+         orientation: vw alone makes them enormous in landscape. */
+      .touch-button {
+        position: absolute;
+        bottom: 5vmin;
+        width: 17vmin;
+        height: 17vmin;
+        max-width: 96px;
+        max-height: 96px;
+        border-radius: 50%;
+        border: 2px solid #555;
+        background: rgba(20, 20, 20, 0.4);
+        color: #eee;
+        font: inherit;
+        font-size: 15px;
+        pointer-events: auto;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .touch-button.pressed {
+        background: rgba(255, 216, 74, 0.75);
+        color: #111;
+      }
+      .touch-left {
+        left: 3vmin;
+      }
+      .touch-right {
+        left: 21vmin;
+      }
+      /* Stacked directly above the pair below it, thumb's reach away. */
+      .touch-down {
+        left: 12vmin;
+        bottom: calc(5vmin + 19vmin);
+      }
+      .touch-run {
+        right: 21vmin;
+      }
+      .touch-jump {
+        right: 3vmin;
+      }
     </style>
-    <script type="module" crossorigin src="/certificaten/assets/index-pHQ1W89Z.js"></script>
+    <script type="module" crossorigin src="/certificaten/assets/index-C5CeDjwh.js"></script>
   </head>
   <body>
     <div class="wrap">
       <canvas id="game" width="480" height="270"></canvas>
       <p id="controls">Pijltjes / A-D = bewegen · Spatie / W = springen · Shift = rennen · R = opnieuw</p>
       <div id="console" hidden></div>
+      <div id="touch" hidden></div>
     </div>
   </body>
 </html>
