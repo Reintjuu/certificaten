@@ -5,20 +5,14 @@
 // It never touches the game's own loop; it borrows the canvas, drives the same
 // pure engine and draws with the same renderer.
 import trainingHistory from "./training-history.json";
-import { CANVAS_H, CANVAS_W, LEVELS, type Level } from "../engine";
-import { COLORS, SCREEN_MARGIN, drawFrameRate, drawScene, drawEntities, withCamera } from "../render";
-import { drawText, drawTextCentered } from "../font";
+import { CANVAS_H, CANVAS_W, LEVELS } from "../engine";
+import { COLORS, drawFrameRate } from "../render";
+import { drawTextCentered } from "../font";
 import { Menu } from "../menu";
 import { createFrameRate } from "../fps";
 import { drawFitnessChart } from "./chart";
-import { RunOutcome, advanceRun, finishRun, startRun, type Run } from "./run";
-import {
-  checkHistory,
-  createTrainer,
-  type GenerationRecord,
-  type LevelHistory,
-  type TrainingHistory,
-} from "./evolution";
+import { finishRun } from "./run";
+import { checkHistory, createTrainer, type LevelHistory, type TrainingHistory } from "./evolution";
 import {
   DEFAULT_ARCHITECTURE,
   features,
@@ -40,28 +34,15 @@ import { createMapElitesTrainer, type Archive } from "./map-elites";
 import { cellAt, drawArchive } from "./archive-view";
 import { DQN_ARCHITECTURE, createDqnTrainer } from "./dqn";
 import { startTrainingSession, type TrainingSession } from "./training-view";
+import { startReplaySession, type Ghost, type ReplaySession } from "./replay-view";
 
 type Screen = "menu" | "replay" | "training" | "weights" | "archive";
-type Ghost = {
-  record: GenerationRecord;
-  index: number;
-  /** Usually the record's, but an edited weight replaces it. */
-  genome: Genome;
-  run: Run;
-  /** Only the leading ghost keeps its whole path; the rest paint into trails. */
-  path: { x: number; y: number }[];
-  lastPoint: { x: number; y: number } | null;
-};
-
 const shipped = checkHistory(trainingHistory);
 // Starts as the recording committed to the repo. Training in the browser
 // replaces it in memory only: a static host can't be written to, so keeping a
 // browser-trained result means downloading it and committing the file.
 let history: TrainingHistory = shipped;
 
-const RESTART_DELAY_FRAMES = 90;
-/** Named apart from run.ts's: these are the live ghosts, sampled denser. */
-const GHOST_PATH_SAMPLE_EVERY = 2;
 const BLINK_HALF = 30;
 const MENU_UP_KEYS = new Set(["ArrowUp", "w"]);
 const MENU_DOWN_KEYS = new Set(["ArrowDown", "s"]);
@@ -93,10 +74,8 @@ let screen: Screen = "menu";
 let levelIndex = 0;
 let generationIndex = 0;
 let showAllGenerations = false;
-let frame = 0;
 let blinkTimer = 0;
-let restartCountdown = RESTART_DELAY_FRAMES;
-let ghosts: Ghost[] = [];
+let replay: ReplaySession | null = null;
 let training: TrainingSession | null = null;
 /**
  * Archives from the last MAP-Elites run, one per level, kept to look at. Held
@@ -107,27 +86,6 @@ const archives: (Archive | null)[] = LEVELS.map(() => null);
 
 function levelHistory(): LevelHistory {
   return history.levels[levelIndex];
-}
-
-function generationColor(index: number, total: number): string {
-  const t = total <= 1 ? 1 : index / (total - 1);
-  return `hsl(${210 - 160 * t}, 85%, ${45 + 15 * t}%)`;
-}
-
-function makeGhost(record: GenerationRecord, index: number): Ghost {
-  const edited = index === levelHistory().bestGeneration ? editedGenome : null;
-  return {
-    record,
-    index,
-    genome: edited ?? record.genome,
-    run: startRun(levelIndex),
-    path: [],
-    lastPoint: null,
-  };
-}
-
-function isFinished(ghost: Ghost): boolean {
-  return ghost.run.outcome !== RunOutcome.Running;
 }
 
 /** Edits belong to one genome, so moving to another one drops them. */
@@ -143,14 +101,19 @@ function startReplay(level: number, generation: number, all: boolean): void {
   levelIndex = level;
   generationIndex = generation;
   showAllGenerations = all;
-  frame = 0;
-  restartCountdown = RESTART_DELAY_FRAMES;
 
-  const { generations } = levelHistory();
-  resetTrails(LEVELS[levelIndex]);
-  ghosts = all ? generations.map(makeGhost) : [makeGhost(generations[generationIndex], generationIndex)];
+  replay = startReplaySession({
+    levelIndex: level,
+    architecture: history.architecture,
+    generations: levelHistory().generations,
+    leadGeneration: all ? levelHistory().bestGeneration : generation,
+    showAll: all,
+    genomeFor: (record, index) =>
+      index === levelHistory().bestGeneration ? (editedGenome ?? record.genome) : record.genome,
+  });
+
   renderGenerationButtons();
-  drawFitnessChart(chartCtx, generations, levelHistory().bestGeneration);
+  drawFitnessChart(chartCtx, levelHistory().generations, levelHistory().bestGeneration);
 }
 
 /**
@@ -383,82 +346,6 @@ function renderGenerationButtons(): void {
 }
 
 /**
- * The trails of the ninety-nine also-rans, painted once as each segment
- * happens instead of restroked in full every frame. Re-stroking every ghost's
- * whole history came to 13,600 lineTo calls a frame by the end of a run. The
- * leading ghost is still drawn live, because one path is 300 calls and it
- * keeps its exact look.
- */
-const FADED_TRAIL_ALPHA = 0.4;
-let trails: HTMLCanvasElement | null = null;
-let trailCtx: CanvasRenderingContext2D | null = null;
-
-function resetTrails(level: Level): void {
-  if (trails?.width !== level.width) {
-    trails = document.createElement("canvas");
-    trails.width = level.width;
-    trails.height = CANVAS_H;
-    trailCtx = trails.getContext("2d");
-  }
-  trailCtx?.clearRect(0, 0, trails.width, trails.height);
-}
-
-function extendTrail(ghost: Ghost, to: { x: number; y: number }): void {
-  const from = ghost.lastPoint;
-  ghost.lastPoint = to;
-  if (from === null || trailCtx === null || ghost.index === levelHistory().bestGeneration) {
-    return;
-  }
-  trailCtx.strokeStyle = generationColor(ghost.index, ghosts.length);
-  trailCtx.lineWidth = 1;
-  trailCtx.beginPath();
-  trailCtx.moveTo(from.x, from.y);
-  trailCtx.lineTo(to.x, to.y);
-  trailCtx.stroke();
-}
-
-function drawTrails(cameraX: number, alpha = FADED_TRAIL_ALPHA): void {
-  if (trails === null) {
-    return;
-  }
-  const left = Math.round(cameraX);
-  const width = Math.min(CANVAS_W, trails.width - left);
-  ctx.globalAlpha = alpha;
-  ctx.drawImage(trails, left, 0, width, CANVAS_H, left, 0, width, CANVAS_H);
-  ctx.globalAlpha = 1;
-}
-
-function drawLeadPath(ghost: Ghost): void {
-  if (ghost.path.length < 2) {
-    return;
-  }
-  ctx.strokeStyle = generationColor(ghost.index, ghosts.length);
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ghost.path.forEach((point, index) => {
-    if (index === 0) {
-      ctx.moveTo(point.x, point.y);
-    } else {
-      ctx.lineTo(point.x, point.y);
-    }
-  });
-  ctx.stroke();
-}
-
-const OUTCOME_LABELS: Record<RunOutcome, string> = {
-  [RunOutcome.Running]: "BEZIG",
-  [RunOutcome.Solved]: "CERTIFICAAT",
-  [RunOutcome.Died]: "GESTRAND",
-  [RunOutcome.Stalled]: "VASTGELOPEN",
-  [RunOutcome.OutOfTime]: "TIJD OP",
-};
-
-/** The camera follows whichever ghost is furthest along. */
-function replayCamera(): number {
-  return Math.max(...ghosts.map((ghost) => ghost.run.state.cameraX));
-}
-
-/**
  * The same forward pass the agent just made, shown as it happens. Weights say
  * what the network could do; weight times activation says what it is doing.
  */
@@ -479,53 +366,21 @@ function drawNetworkFor(ghost: Ghost): void {
 }
 
 function drawReplay(): void {
-  const cameraX = replayCamera();
-  const bestIndex = levelHistory().bestGeneration;
-  const lead = ghosts[bestIndex] ?? ghosts[0];
+  if (replay === null) {
+    return;
+  }
+  replay.draw(ctx);
+  drawNetworkFor(replay.lead);
 
-  withCamera(ctx, cameraX, () => {
-    drawScene(ctx, LEVELS[levelIndex], cameraX);
-    if (showAllGenerations) {
-      drawTrails(cameraX);
-      drawLeadPath(lead);
-      for (const ghost of ghosts) {
-        if (ghost.index === bestIndex) {
-          continue;
-        }
-        ctx.fillStyle = generationColor(ghost.index, ghosts.length);
-        ctx.globalAlpha = isFinished(ghost) ? 0.35 : 1;
-        ctx.fillRect(
-          Math.round(ghost.run.state.player.x + 5),
-          Math.round(ghost.run.state.player.y + 8),
-          6,
-          8
-        );
-        ctx.globalAlpha = 1;
-      }
-    }
-    drawEntities(ctx, lead.run.state);
-  });
-  drawNetworkFor(lead);
+  statusEl.textContent = replay.showAll
+    ? `Level ${String(levelIndex + 1)}, alle ${String(replay.ghosts.length)} generaties tegelijk ` +
+      `(blauw = vroegste, geel = laatste). ${String(replay.reached)} haalden het certificaat.`
+    : replayStatus(replay.lead);
+}
 
-  if (showAllGenerations) {
-    const reached = ghosts.filter((ghost) => ghost.run.outcome === RunOutcome.Solved).length;
-    drawText(ctx, `ALLE ${ghosts.length} GENERATIES`, SCREEN_MARGIN, SCREEN_MARGIN, 1, COLORS.ink);
-    drawText(ctx, `FRAME ${frame} ${reached} BINNEN`, SCREEN_MARGIN, 26, 1, COLORS.ink);
-    statusEl.textContent =
-      `Level ${levelIndex + 1}, alle ${ghosts.length} generaties tegelijk (blauw = vroegste, geel = laatste). ` +
-      `${reached} haalden het certificaat.`;
-  } else {
-    const ghost = ghosts[0];
-    drawText(
-      ctx,
-      `LEVEL ${levelIndex + 1} GEN ${ghost.record.generation}`,
-      SCREEN_MARGIN,
-      SCREEN_MARGIN,
-      1,
-      COLORS.ink
-    );
-    drawText(ctx, `FRAME ${frame} ${OUTCOME_LABELS[ghost.run.outcome]}`, SCREEN_MARGIN, 26, 1, COLORS.ink);
-    statusEl.textContent = replayStatus(ghost);
+function advanceReplay(): void {
+  if (replay?.advance() === true) {
+    startReplay(levelIndex, generationIndex, showAllGenerations);
   }
 }
 
@@ -566,30 +421,6 @@ function drawTraining(): void {
   statusEl.textContent = training.status();
 }
 
-function advanceGhost(ghost: Ghost): void {
-  if (isFinished(ghost)) {
-    return;
-  }
-  // Re-running the stored genome through the same deterministic engine
-  // reproduces that generation's run exactly: the weights are the recording.
-  ghost.run = advanceRun(
-    ghost.run,
-    ghost.genome,
-    levelIndex,
-    history.architecture,
-    policyFor(history.architecture)
-  );
-  if (frame % GHOST_PATH_SAMPLE_EVERY !== 0) {
-    return;
-  }
-  const { player } = ghost.run.state;
-  const point = { x: player.x + player.w / 2, y: player.y + 12 };
-  if (ghost.index === levelHistory().bestGeneration) {
-    ghost.path.push(point);
-  }
-  extendTrail(ghost, point);
-}
-
 function replayStatus(lead: Ghost): string {
   if (selected === null) {
     return "Klik op een verbinding in het netwerk om het gewicht te zien en aan te passen.";
@@ -612,19 +443,6 @@ function replayStatus(lead: Ghost): string {
 function shippedGenome(): Genome {
   const level = history.levels[levelIndex];
   return level.generations[level.bestGeneration].genome;
-}
-
-function advanceReplay(): void {
-  if (ghosts.every(isFinished)) {
-    restartCountdown--;
-    if (restartCountdown <= 0) {
-      startReplay(levelIndex, generationIndex, showAllGenerations);
-    }
-    return;
-  }
-  ghosts.forEach(advanceGhost);
-  frame++;
-  restartCountdown = RESTART_DELAY_FRAMES;
 }
 
 function toMenu(): void {
