@@ -21,6 +21,7 @@ const solvedRun = (frames: number): Run => ({
   state: startRun(0).state,
   frames,
   closest: 0,
+  highest: 0,
   framesSinceProgress: 0,
   outcome: RunOutcome.Solved,
 });

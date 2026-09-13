@@ -44,6 +44,8 @@ export type Run = {
   frames: number;
   /** The closest the player has come to the certificate, in pixels. */
   closest: number;
+  /** The highest the player has been, as a y coordinate, so smaller is higher. */
+  highest: number;
   framesSinceProgress: number;
   outcome: RunOutcome;
 };
@@ -73,6 +75,7 @@ export function startRun(levelIndex: number): Run {
     state,
     frames: 0,
     closest: distanceToCertificate(state, levelIndex),
+    highest: state.player.y,
     framesSinceProgress: 0,
     outcome: RunOutcome.Running,
   };
@@ -106,6 +109,7 @@ export function stepRun(run: Run, input: Input, levelIndex: number): Run {
     state,
     frames: run.frames + 1,
     closest: Math.min(run.closest, distance),
+    highest: Math.min(run.highest, state.player.y),
     framesSinceProgress: madeProgress ? 0 : run.framesSinceProgress + 1,
     outcome: RunOutcome.Running,
   };

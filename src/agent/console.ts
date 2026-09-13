@@ -36,10 +36,12 @@ import { connectionAt, drawNetwork, drawWeightMap, type Connection } from "./net
 import { createReinforceTrainer } from "./reinforce";
 import { createCloneTrainerUsing } from "./clone";
 import { createCmaesTrainer } from "./cmaes";
+import { createMapElitesTrainer, type Archive } from "./map-elites";
+import { cellAt, drawArchive } from "./archive-view";
 import { DQN_ARCHITECTURE, createDqnTrainer } from "./dqn";
 import { startTrainingSession, type TrainingSession } from "./training-view";
 
-type Screen = "menu" | "replay" | "training" | "weights";
+type Screen = "menu" | "replay" | "training" | "weights" | "archive";
 type Ghost = {
   record: GenerationRecord;
   index: number;
@@ -96,6 +98,12 @@ let blinkTimer = 0;
 let restartCountdown = RESTART_DELAY_FRAMES;
 let ghosts: Ghost[] = [];
 let training: TrainingSession | null = null;
+/**
+ * Archives from the last MAP-Elites run, one per level, kept to look at. Held
+ * at full length so indexing a level always answers rather than running off
+ * the end of an array the type says cannot be short.
+ */
+const archives: (Archive | null)[] = LEVELS.map(() => null);
 
 function levelHistory(): LevelHistory {
   return history.levels[levelIndex];
@@ -184,6 +192,12 @@ const TRAINING_METHODS = {
     create: createCloneTrainerUsing(teacherFor),
     architectureFor: controlHead,
   },
+  archive: {
+    label: "MAP-Elites (archief)",
+    short: "MAP-ELITES",
+    create: createMapElitesTrainer,
+    architectureFor: controlHead,
+  },
   cmaes: {
     label: "CMA-ES",
     short: "CMA-ES",
@@ -211,6 +225,41 @@ function startTraining(
   const { create, short, architectureFor } = TRAINING_METHODS[chosen];
   training = startTrainingSession(create, short, architectureFor(hidden));
   generationsEl.replaceChildren();
+}
+
+function startArchive(): void {
+  if (archives[levelIndex] === null) {
+    statusEl.textContent =
+      "Er is nog geen archief. Train eerst met MAP-Elites; die bewaart per soort gedrag de beste agent.";
+    return;
+  }
+  screen = "archive";
+  generationsEl.replaceChildren();
+  setNetworkCaption(ARCHIVE_CAPTION);
+}
+
+function drawArchiveScreen(): void {
+  const grid = archives[levelIndex];
+  if (grid === null) {
+    toMenu();
+    return;
+  }
+
+  ctx.fillStyle = COLORS.nightSky;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  drawTextCentered(ctx, "ARCHIEF", CANVAS_W / 2, 44, 1, COLORS.highlight);
+  drawTextCentered(ctx, `LEVEL ${levelIndex + 1}`, CANVAS_W / 2, 96, 1, COLORS.text);
+  drawTextCentered(ctx, "KLIK EEN VAKJE", CANVAS_W / 2, 140, 1, COLORS.dimText);
+  if (blinkTimer < BLINK_HALF) {
+    drawTextCentered(ctx, "ESCAPE VOOR HET MENU", CANVAS_W / 2, 200, 1, COLORS.faintText);
+  }
+
+  if (networkCtx !== null) {
+    drawArchive(networkCtx, grid);
+  }
+  statusEl.textContent =
+    "Elk vakje is een soort gedrag: hoe ver hij kwam tegen hoe hoog hij kwam, met de beste agent " +
+    "die zich zo gedroeg. Klik er een aan om hem te zien spelen.";
 }
 
 function startWeightMap(): void {
@@ -286,6 +335,7 @@ const menu = new Menu("AI CONSOLE", [
       startTraining();
     },
   },
+  { label: "ARCHIEF", hint: "GEDRAG UIT MAP-ELITES", run: startArchive },
   {
     label: "OPGESLAGEN GEWICHTEN",
     hint: "WAT ER IN HET BESTAND STAAT",
@@ -480,8 +530,15 @@ function drawReplay(): void {
 }
 
 /** Shows movement within a generation, so a slow level still looks alive. */
+function hasArchive(trainer: unknown): trainer is { archive: Archive } {
+  return typeof trainer === "object" && trainer !== null && "archive" in trainer;
+}
+
 function finishTraining(session: TrainingSession): void {
   clearEdits();
+  session.trainers.forEach((trainer, level) => {
+    archives[level] = hasArchive(trainer) ? trainer.archive : null;
+  });
   history = {
     architecture: session.trainers[0].architecture,
     levels: session.trainers.map((trainer) => trainer.toHistory()),
@@ -678,6 +735,8 @@ function tick(): void {
     drawTraining();
   } else if (screen === "weights") {
     drawWeights();
+  } else if (screen === "archive") {
+    drawArchiveScreen();
   } else {
     advanceReplay();
     drawReplay();
@@ -701,6 +760,7 @@ function buildCanvas(id: string, width: number, height: number): HTMLCanvasEleme
 
 const NETWORK_CAPTION = "Het netwerk: links wat het ziet, rechts wat het besluit.";
 const WEIGHTS_CAPTION = "De opgeslagen gewichten, per laag: een rij per knoop, de bias als laatste kolom.";
+const ARCHIVE_CAPTION = "Het archief: een vakje per soort gedrag, met de beste agent die zich zo gedroeg.";
 
 function setNetworkCaption(text: string): void {
   if (networkCaption !== null) {
@@ -799,13 +859,34 @@ function buildChrome(container: HTMLElement): void {
 
 /** Canvas coordinates from a click, whatever the element is scaled to. */
 function onNetworkClick(event: MouseEvent): void {
-  if (networkCanvas === null || screen !== "replay" || showAllGenerations) {
+  if (networkCanvas === null || networkCtx === null) {
     return;
   }
   const bounds = networkCanvas.getBoundingClientRect();
   const x = (event.clientX - bounds.left) * (networkCanvas.width / bounds.width);
   const y = (event.clientY - bounds.top) * (networkCanvas.height / bounds.height);
-  selected = networkCtx === null ? null : connectionAt(networkCtx, history.architecture, x, y);
+
+  if (screen === "archive") {
+    playElite(cellAt(networkCtx, x, y));
+    return;
+  }
+  if (screen === "replay" && !showAllGenerations) {
+    selected = connectionAt(networkCtx, history.architecture, x, y);
+  }
+}
+
+/** Replays whichever agent fills the clicked cell of the archive. */
+function playElite(cell: number | null): void {
+  const grid = archives[levelIndex];
+  const elite = cell === null || grid === null ? null : grid[cell];
+  if (elite === null) {
+    statusEl.textContent = "Dat vakje is leeg: geen enkele agent gedroeg zich zo.";
+    return;
+  }
+  editedGenome = elite.genome;
+  selected = null;
+  recordedFrames = null;
+  startReplay(levelIndex, levelHistory().bestGeneration, false);
 }
 
 const WEIGHT_STEP = 0.05;

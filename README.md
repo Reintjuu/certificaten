@@ -101,7 +101,7 @@ Trainen gebeurt volledig headless en zo snel als de CPU kan, niet op speelsnelhe
 
 In de browser scoort de trainer **één kandidaat per keer** in plaats van een hele generatie, met een budget van 10ms per frame. Een generatie is 80 runs en kost een paar honderd milliseconden; die tussen twee paints proppen liet de pagina bevriezen en de generatieteller stilstaan. Nu loopt er een voortgangsbalk binnen de generatie mee.
 
-### Vijf manieren van leren, en wat ze van elkaar verraden
+### Zes manieren van leren, en wat ze van elkaar verraden
 
 Er zit ook **behaviour cloning** in (`src/agent/clone.ts`), en dat is het controle-experiment voor de hele AI-kant. Neem de beste agent die er is, schrijf op wat hij in elke toestand deed, en leer een vers netwerk dat na te doen met gewone supervised gradiëntafdaling. De leraar is een netwerk van precies dezelfde vorm, dus de leerling kán hem in principe exact evenaren.
 
@@ -139,6 +139,14 @@ Ik heb geprobeerd dat laatste stuk alsnog te halen: ruis vasthouden over meerder
 Die eigenschap staat als test in `test/reinforce.test.ts`, samen met een numerieke controle van de backpropagatie tegen eindige differenties. De gradiënt is dus aantoonbaar correct; het ging mis in wat ik hem te eten gaf.
 
 Drie fouten onderweg, alle drie in code die volkomen normaal leest. Ruis op de gewogen som in plaats van op de uitgang: zodra die som voorbij ongeveer twee komt is tanh vlak en zijn alle episodes in een batch letterlijk identiek. Een baseline per framenummer onder een return-to-go die telescopeert, waardoor vooruitgang zichzelf bestrafte. En de gesamplede beste episode opslaan naast het hebzuchtige genome, waardoor de grafiek voortgang meldde die de agent niet had.
+
+### MAP-Elites: niet één beste, maar een archief van gedrag
+
+De andere vijf jagen op één beste agent. **MAP-Elites** (`src/agent/map-elites.ts`) vult een raster van gedragingen en bewaart per vakje de beste agent die zich zó gedroeg. De assen zijn hoe ver hij kwam en hoe hoog hij ooit klom, precies de twee dingen die de pogingen op het scherm van elkaar onderscheiden. Een vakje gaat alleen vooruit, nooit achteruit, dus een vreemde eend die hoog kwam maar slecht scoorde wordt niet weggefokt zoals in een gewone populatie.
+
+Met hetzelfde evaluatiebudget als de GA speelt hij alle drie de levels uit (3296, 3258, 3193 tegen 3296, 3258, 3230) en levert er 72, 83 en 58 gevulde gedragsvakjes bij. Kies **archief** in het menu om het raster te zien: kleur is kwaliteit, geel omrand betekent dat die agent het certificaat haalt, en klikken speelt hem af.
+
+Eén meetles die het vermelden waard is. Met een kwart van het budget haalde hij geen enkel level en kwam level 1 op −39; met een gelijk budget haalt hij ze alle drie. De eerste meting zei dus niets over de methode en alles over wat ik hem gaf.
 
 ### CMA-ES: evolutie die leert wáár ze moet zoeken
 
