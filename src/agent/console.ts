@@ -35,6 +35,7 @@ import {
 import { connectionAt, drawNetwork, drawWeightMap, type Connection } from "./network-view";
 import { createReinforceTrainer } from "./reinforce";
 import { createCloneTrainerUsing } from "./clone";
+import { createCmaesTrainer } from "./cmaes";
 import { DQN_ARCHITECTURE, createDqnTrainer } from "./dqn";
 import { startTrainingSession, type TrainingSession } from "./training-view";
 
@@ -181,6 +182,12 @@ const TRAINING_METHODS = {
     label: "nadoen (behaviour cloning)",
     short: "NADOEN",
     create: createCloneTrainerUsing(teacherFor),
+    architectureFor: controlHead,
+  },
+  cmaes: {
+    label: "CMA-ES",
+    short: "CMA-ES",
+    create: createCmaesTrainer,
     architectureFor: controlHead,
   },
   qlearning: {

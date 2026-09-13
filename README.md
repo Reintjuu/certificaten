@@ -101,7 +101,7 @@ Trainen gebeurt volledig headless en zo snel als de CPU kan, niet op speelsnelhe
 
 In de browser scoort de trainer **één kandidaat per keer** in plaats van een hele generatie, met een budget van 10ms per frame. Een generatie is 80 runs en kost een paar honderd milliseconden; die tussen twee paints proppen liet de pagina bevriezen en de generatieteller stilstaan. Nu loopt er een voortgangsbalk binnen de generatie mee.
 
-### Vier manieren van leren, en wat ze van elkaar verraden
+### Vijf manieren van leren, en wat ze van elkaar verraden
 
 Er zit ook **behaviour cloning** in (`src/agent/clone.ts`), en dat is het controle-experiment voor de hele AI-kant. Neem de beste agent die er is, schrijf op wat hij in elke toestand deed, en leer een vers netwerk dat na te doen met gewone supervised gradiëntafdaling. De leraar is een netwerk van precies dezelfde vorm, dus de leerling kán hem in principe exact evenaren.
 
@@ -139,6 +139,19 @@ Ik heb geprobeerd dat laatste stuk alsnog te halen: ruis vasthouden over meerder
 Die eigenschap staat als test in `test/reinforce.test.ts`, samen met een numerieke controle van de backpropagatie tegen eindige differenties. De gradiënt is dus aantoonbaar correct; het ging mis in wat ik hem te eten gaf.
 
 Drie fouten onderweg, alle drie in code die volkomen normaal leest. Ruis op de gewogen som in plaats van op de uitgang: zodra die som voorbij ongeveer twee komt is tanh vlak en zijn alle episodes in een batch letterlijk identiek. Een baseline per framenummer onder een return-to-go die telescopeert, waardoor vooruitgang zichzelf bestrafte. En de gesamplede beste episode opslaan naast het hebzuchtige genome, waardoor de grafiek voortgang meldde die de agent niet had.
+
+### CMA-ES: evolutie die leert wáár ze moet zoeken
+
+De gewone GA muteert elk gewicht even hard in elke richting. **CMA-ES** (`src/agent/cmaes.ts`) houdt een gemiddelde bij plus een stapgrootte per gewicht, en na elke generatie schuift het gemiddelde naar de kandidaten die het goed deden terwijl de stapgrootte meegroeit langs de assen waarin die kandidaten daadwerkelijk van elkaar verschilden. Dit is de separabele vorm: een diagonale covariantie in plaats van een volle matrix, wat een eigendecompositie bespaart en voor 131 grotendeels onafhankelijke gewichten een prima ruil is.
+
+Over negen volledige runs per methode (drie levels, drie seeds):
+
+|           | opgelost | beste run  | gesimuleerde frames |
+| --------- | -------- | ---------- | ------------------- |
+| CMA-ES    | 7 van 9  | 585 frames | **9,8M**            |
+| gewone GA | 7 van 9  | 558 frames | 29,7M               |
+
+Even vaak raak, vrijwel dezelfde snelheid, met **een derde van het rekenwerk**. Dat is precies wat een slimmere zoeker hoort op te leveren. Wat opvalt bij het lezen van de grafiek: CMA-ES zet zijn _gemiddelde_ neer als de agent van die generatie, waar de GA de beste van tachtig neerzet. Dat eerste is een strengere uitspraak, want het gemiddelde is wat het algoritme daadwerkelijk gelooft.
 
 ### Q-learning, de eerlijke tweede kans
 
