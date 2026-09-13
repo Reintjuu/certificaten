@@ -766,16 +766,22 @@ function settleBlocks(blocks: Block[]): void {
   }
 }
 
+/** Everything that moves, which is what a frame is applied to. */
+export type World = {
+  player: Player;
+  enemies: Enemy[];
+  mushrooms: Mushroom[];
+  blocks: Block[];
+};
+
 /** Everything a single playing frame does to the world, in order. */
 export function stepWorld(
-  p: Player,
-  enemies: Enemy[],
-  mushrooms: Mushroom[],
-  blocks: Block[],
+  world: World,
   level: Level,
   input: Input,
   view: { cameraX: number; framerule: boolean }
 ): { died: boolean; coins: number } {
+  const { player: p, enemies, mushrooms, blocks } = world;
   if (view.framerule && p.invincibleFramerules > 0) {
     p.invincibleFramerules--;
   }

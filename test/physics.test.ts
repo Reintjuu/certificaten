@@ -581,7 +581,10 @@ describe("blocks", () => {
   test("coming up under one stops you dead and knocks it", () => {
     const block = blockAt(100, 150);
     const p = headingInto(block);
-    stepWorld(p, [], [], [block], level, input(), { cameraX: 0, framerule: false });
+    stepWorld({ player: p, enemies: [], mushrooms: [], blocks: [block] }, level, input(), {
+      cameraX: 0,
+      framerule: false,
+    });
 
     assert.equal(p.vy, PHYSICS.headBumpVelocity, "BumpBlock zeroes Player_Y_Speed");
     assert.equal(p.y, block.y + block.h, "and you end up against its underside");
@@ -590,27 +593,42 @@ describe("blocks", () => {
 
   test("a question block gives up its stamp once and then stands empty", () => {
     const block = blockAt(100, 150);
-    const first = stepWorld(headingInto(block), [], [], [block], level, input(), {
-      cameraX: 0,
-      framerule: false,
-    });
+    const first = stepWorld(
+      { player: headingInto(block), enemies: [], mushrooms: [], blocks: [block] },
+      level,
+      input(),
+      {
+        cameraX: 0,
+        framerule: false,
+      }
+    );
     assert.equal(first.coins, 1);
     assert.equal(block.contains, BlockContents.Nothing);
 
-    const second = stepWorld(headingInto(block), [], [], [block], level, input(), {
-      cameraX: 0,
-      framerule: false,
-    });
+    const second = stepWorld(
+      { player: headingInto(block), enemies: [], mushrooms: [], blocks: [block] },
+      level,
+      input(),
+      {
+        cameraX: 0,
+        framerule: false,
+      }
+    );
     assert.equal(second.coins, 0, "a block only pays out once");
   });
 
   test("a mushroom block puts a mushroom on top of itself", () => {
     const block = blockAt(100, 150, { contains: BlockContents.Mushroom });
     const mushrooms: Mushroom[] = [];
-    stepWorld(headingInto(block), [], mushrooms, [block], level, input(), {
-      cameraX: 0,
-      framerule: false,
-    });
+    stepWorld(
+      { player: headingInto(block), enemies: [], mushrooms: mushrooms, blocks: [block] },
+      level,
+      input(),
+      {
+        cameraX: 0,
+        framerule: false,
+      }
+    );
 
     assert.equal(mushrooms.length, 1);
     assert.equal(mushrooms[0].y + mushrooms[0].h, block.y, "standing on the block it came from");
@@ -621,13 +639,19 @@ describe("blocks", () => {
 
     const broken = brick();
     const big = headingInto(broken, { big: true, h: PHYSICS.playerH });
-    stepWorld(big, [], [], [broken], level, input(), { cameraX: 0, framerule: false });
+    stepWorld({ player: big, enemies: [], mushrooms: [], blocks: [broken] }, level, input(), {
+      cameraX: 0,
+      framerule: false,
+    });
     assert.equal(broken.state, BlockState.Broken);
     assert.equal(big.vy, PHYSICS.shatterVelocity, "BrickShatter leaves you drifting up");
 
     const rattled = brick();
     const small = headingInto(rattled);
-    stepWorld(small, [], [], [rattled], level, input(), { cameraX: 0, framerule: false });
+    stepWorld({ player: small, enemies: [], mushrooms: [], blocks: [rattled] }, level, input(), {
+      cameraX: 0,
+      framerule: false,
+    });
     assert.equal(rattled.state, BlockState.Bumping);
     assert.equal(small.vy, PHYSICS.headBumpVelocity);
   });
@@ -635,7 +659,10 @@ describe("blocks", () => {
   test("a brick with a stamp in it survives even a big hit", () => {
     const block = blockAt(100, 150, { kind: BlockKind.Brick });
     const p = headingInto(block, { big: true, h: PHYSICS.playerH });
-    const result = stepWorld(p, [], [], [block], level, input(), { cameraX: 0, framerule: false });
+    const result = stepWorld({ player: p, enemies: [], mushrooms: [], blocks: [block] }, level, input(), {
+      cameraX: 0,
+      framerule: false,
+    });
 
     assert.equal(result.coins, 1);
     assert.notEqual(block.state, BlockState.Broken, "there was something in it to give first");
@@ -644,13 +671,21 @@ describe("blocks", () => {
   test("the knock wears off and leaves the block where it was", () => {
     const block = blockAt(100, 150);
     const p = headingInto(block);
-    stepWorld(p, [], [], [block], level, input(), { cameraX: 0, framerule: false });
+    stepWorld({ player: p, enemies: [], mushrooms: [], blocks: [block] }, level, input(), {
+      cameraX: 0,
+      framerule: false,
+    });
 
     for (let frame = 0; frame < PHYSICS.blockBounceFrames; frame++) {
-      stepWorld(player({ x: 400, y: 100 }), [], [], [block], level, input(), {
-        cameraX: 0,
-        framerule: false,
-      });
+      stepWorld(
+        { player: player({ x: 400, y: 100 }), enemies: [], mushrooms: [], blocks: [block] },
+        level,
+        input(),
+        {
+          cameraX: 0,
+          framerule: false,
+        }
+      );
     }
     assert.equal(block.bounceTimer, 0);
     assert.equal(block.state, BlockState.Idle);

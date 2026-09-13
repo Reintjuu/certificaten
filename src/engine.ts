@@ -154,15 +154,8 @@ function stepPlaying(state: GameState, input: Input, levels: Level[]): void {
   const framerule = advanceFramerule(state);
   advanceGameTimer(state);
 
-  const { died, coins } = stepWorld(
-    state.player,
-    state.enemies,
-    state.mushrooms,
-    state.blocks,
-    level,
-    input,
-    { cameraX: state.cameraX, framerule }
-  );
+  // GameState is a World with extra fields on it, so it goes straight in.
+  const { died, coins } = stepWorld(state, level, input, { cameraX: state.cameraX, framerule });
   state.coins += coins;
   updateCamera(state, level);
 
