@@ -1,6 +1,7 @@
 dist
 node_modules
 src/agent/training-history.json
+src/agent/routes.json
 src/font-glyphs.ts
 src/sprite-frames.ts
 test-results

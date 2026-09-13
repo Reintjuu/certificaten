@@ -50,6 +50,8 @@ export type GameState = {
   blocks: Block[];
   /** Stamps collected, which is SMB1's coin tally under a duller name. */
   coins: number;
+  /** Blocks knocked with your head, counted so the sound knows to ring. */
+  bumps: number;
   dialogueLines: string[];
   dialogueIndex: number;
   dialogueKind: DialogueKind;
@@ -90,6 +92,7 @@ export function createPlayingState(levelIndex: number, levels: Level[] = LEVELS)
     mushrooms: createMushrooms(level.mushrooms),
     blocks: createBlocks(level.blocks),
     coins: 0,
+    bumps: 0,
     dialogueLines: [],
     dialogueIndex: 0,
     dialogueKind: "intro",
@@ -155,8 +158,9 @@ function stepPlaying(state: GameState, input: Input, levels: Level[]): void {
   advanceGameTimer(state);
 
   // GameState is a World with extra fields on it, so it goes straight in.
-  const { died, coins } = stepWorld(state, level, input, { cameraX: state.cameraX, framerule });
+  const { died, coins, bumps } = stepWorld(state, level, input, { cameraX: state.cameraX, framerule });
   state.coins += coins;
+  state.bumps += bumps;
   updateCamera(state, level);
 
   if (died || state.timeRemaining <= 0) {

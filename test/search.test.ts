@@ -1,8 +1,9 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { LEVELS, PHYSICS } from "../src/engine";
-import { searchLevel } from "../src/agent/search";
+import { LEVELS, NO_INPUT, PHYSICS } from "../src/engine";
+import { replay, searchLevel } from "../src/agent/search";
+import { decodeInput, encodeInput, routeFor } from "../src/agent/routes";
 import { MOVES, playMove } from "../src/agent/moves";
 import { createPlayingState } from "../src/engine";
 import { finishRun } from "../src/agent/run";
@@ -81,5 +82,35 @@ describe("what one move is", () => {
         `${move.direction}/${move.hold} does nothing at all`
       );
     }
+  });
+});
+
+describe("the route the replay draws", () => {
+  const stored = JSON.parse(readFileSync(new URL("../src/agent/routes.json", import.meta.url), "utf8")) as {
+    routes: { level: number; frames: number; inputs: number[] }[];
+  };
+
+  test("there is one per level", () => {
+    assert.deepEqual(
+      stored.routes.map((route) => route.level),
+      LEVELS.map((_, index) => index)
+    );
+  });
+
+  for (const route of stored.routes) {
+    test(`level ${route.level + 1}: the stored route still finishes it`, () => {
+      // The file is generated, so like the trained genomes it can go stale the
+      // moment the physics or the level data move. Replaying it is what says
+      // so, rather than a comment asking you to remember.
+      const played = replay(routeFor(route.level) ?? [], route.level);
+      assert.equal(played.solved, true, "the stored route no longer reaches the certificate");
+      assert.equal(played.frames, route.frames, "it no longer takes the number of frames stored with it");
+    });
+  }
+
+  test("a frame of buttons survives the trip through the file", () => {
+    const held = { ...NO_INPUT, left: true, jumpHeld: true, jumpPressed: true, run: true };
+    assert.deepEqual(decodeInput(encodeInput(held)), held);
+    assert.deepEqual(decodeInput(encodeInput(NO_INPUT)), NO_INPUT);
   });
 });

@@ -93,6 +93,15 @@ const SCENES = new Map<string, () => void>(
       ctx.restore();
     },
 
+    /** Mario mid flash, which is a fade rather than a disappearance. */
+    hurt(): void {
+      const state = createPlayingState(0);
+      state.player.big = true;
+      state.player.x = 120;
+      state.player.invincibleFramerules = 5;
+      paint(state, 0);
+    },
+
     /** A question block mid bounce with the stamp coming out of it. */
     blocks(): void {
       const state = createPlayingState(0);
@@ -104,6 +113,7 @@ const SCENES = new Map<string, () => void>(
         releasing: BlockContents.Coin,
         bounceTimer: 12,
         contains: BlockContents.Nothing,
+        used: true,
       };
       paint(state, 0);
     },

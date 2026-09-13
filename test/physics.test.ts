@@ -415,6 +415,33 @@ describe("moveEnemies", () => {
     assert.notEqual(shell.vx, 0, "and it walks again");
   });
 
+  test("a shell stomped in mid-air falls rather than hanging there", () => {
+    // A deliberate break with the ROM: ReviveStunned skips
+    // MoveD_EnemyVertically, so a shell really does hang in the air there.
+    // On screen that reads as a bug to everyone who sees it.
+    const midAir = enemy({
+      kind: EnemyKind.Koopa,
+      state: EnemyState.Shell,
+      x: 100,
+      y: 100,
+      vx: 0,
+      squashTimer: 8,
+    });
+    const before = midAir.y;
+    moveEnemies([midAir], level, 0, false);
+
+    assert.ok(midAir.y > before, "it should be on its way down");
+    assert.equal(midAir.vx, 0, "without starting to walk again");
+  });
+
+  test("a flattened goomba falls too, and lands on what is under it", () => {
+    const squashed = enemy({ state: EnemyState.Squashed, x: 100, y: 150, squashTimer: 4 });
+    for (let frame = 0; frame < 40; frame++) {
+      moveEnemies([squashed], levelWithPlatform(0, 200, 400), 0, false);
+    }
+    assert.equal(squashed.y + squashed.h, 200);
+  });
+
   test("it carries on the way it was going, which a kick can have turned around", () => {
     const shell = enemy({
       kind: EnemyKind.Koopa,
@@ -666,6 +693,80 @@ describe("blocks", () => {
 
     assert.equal(result.coins, 1);
     assert.notEqual(block.state, BlockState.Broken, "there was something in it to give first");
+  });
+
+  test("a block you have already emptied is just a wall", () => {
+    // CheckForSolidMTiles treats the used-block metatile as plainly solid, so
+    // the head collision never reaches PlayerHeadCollision: no bounce, and
+    // nothing comes out a second time.
+    const block = blockAt(100, 150);
+    const first = stepWorld(
+      { player: headingInto(block), enemies: [], mushrooms: [], blocks: [block] },
+      level,
+      input(),
+      { cameraX: 0, framerule: false }
+    );
+    assert.equal(first.coins, 1);
+    assert.equal(block.used, true);
+
+    for (let frame = 0; frame < PHYSICS.blockBounceFrames; frame++) {
+      stepWorld(
+        { player: player({ x: 400, y: 100 }), enemies: [], mushrooms: [], blocks: [block] },
+        level,
+        input(),
+        {
+          cameraX: 0,
+          framerule: false,
+        }
+      );
+    }
+
+    const again = headingInto(block);
+    const second = stepWorld({ player: again, enemies: [], mushrooms: [], blocks: [block] }, level, input(), {
+      cameraX: 0,
+      framerule: false,
+    });
+    assert.equal(second.coins, 0);
+    assert.equal(second.bumps, 1, "it still rings, because you still bonked something");
+    assert.equal(block.bounceTimer, 0, "but it does not budge");
+    assert.equal(again.vy, PHYSICS.solidBumpVelocity, "NYSpd sends you back down with $01");
+  });
+
+  test("you cannot walk through one", () => {
+    // BlockBufferColli_Side: a block is a wall as well as a floor and a
+    // ceiling, which is what stopped an agent clipping straight through one.
+    // Both standing on the floor of the test level, so the block is in the way
+    // rather than overhead.
+    const block = blockAt(200, 200 - 16);
+    const p = player({ x: 150, y: 200 - PHYSICS.playerSmallH });
+
+    for (let frame = 0; frame < 60; frame++) {
+      stepWorld(
+        { player: p, enemies: [], mushrooms: [], blocks: [block] },
+        level,
+        input({ right: true, run: true }),
+        {
+          cameraX: 0,
+          framerule: false,
+        }
+      );
+    }
+    assert.ok(p.x + p.w <= block.x + 0.01, `ended up at ${p.x.toFixed(1)}, past the block at ${block.x}`);
+  });
+
+  test("landing on one is still a landing, not a shove sideways", () => {
+    // Only the shallower overlap is resolved, so dropping onto a block from
+    // above puts you on top of it rather than beside it.
+    const block = blockAt(200, 150);
+    const p = player({ x: 200, y: 150 - PHYSICS.playerSmallH - 4, vy: 4, grounded: false });
+    stepWorld({ player: p, enemies: [], mushrooms: [], blocks: [block] }, level, input(), {
+      cameraX: 0,
+      framerule: false,
+    });
+
+    assert.equal(p.grounded, true);
+    assert.equal(p.y + p.h, block.y);
+    assert.equal(p.x, 200, "and not pushed off sideways");
   });
 
   test("the knock wears off and leaves the block where it was", () => {

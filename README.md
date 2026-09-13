@@ -40,9 +40,15 @@ Je begint klein. Een paddenstoel maakt je groot (`BoundBoxCtrlData`: 24px hoog i
 
 Er lopen twee soorten vijanden rond. Een goomba wordt plat en verdwijnt. Een koopa kruipt in zijn schild: dat schild blijft liggen, en loop je ertegenaan dan schopt je het weg met `$30` (3 px per frame, zes keer een looppas, uit `KickedShellXSpdData`), waarna het alles omver maait wat het onderweg tegenkomt. Een stilliggend schild telt `RevivalRateData` af (`$10` framerules) en dan staat de koopa weer op zijn poten. Erop springen zet een glijdend schild weer stil, en dat is hoe je een schild tegen de rest van de rij aan gebruikt zonder er zelf onder te komen.
 
-Aan blokken kom je van onderaf. `PlayerHeadCollision` zet je verticale snelheid op nul zodra je er met je hoofd tegenaan komt, dus je stopt dood tegen de onderkant; het blok zelf schiet met `$fe` omhoog en is na `BlockBounceTimer` ($10 frames) terug op zijn plek. Wat erin zit komt eruit: een stempel wordt meteen bijgeschreven (`GiveOneCoin` doet dat op het moment van tevoorschijn komen, dus het ding dat omhoog vliegt is louter vertoon) en een paddenstoel komt bovenop het blok te staan. Een gewone baksteen zonder inhoud breekt als je groot bent en rammelt alleen als je klein bent; `BrickShatter` laat je daarbij op `$fe` doorstijgen in plaats van je stil te zetten. Blokken zijn ook gewoon vloer: je kunt erop staan, en een kapotte niet meer.
+Aan blokken kom je van onderaf. `PlayerHeadCollision` zet je verticale snelheid op nul zodra je er met je hoofd tegenaan komt, dus je stopt dood tegen de onderkant; het blok zelf schiet met `$fe` omhoog en is na `BlockBounceTimer` ($10 frames) terug op zijn plek. Wat erin zit komt eruit: een stempel wordt meteen bijgeschreven (`GiveOneCoin` doet dat op het moment van tevoorschijn komen, dus het ding dat omhoog vliegt is louter vertoon) en een paddenstoel komt bovenop het blok te staan. Een gewone baksteen zonder inhoud breekt als je groot bent en rammelt alleen als je klein bent; `BrickShatter` laat je daarbij op `$fe` doorstijgen in plaats van je stil te zetten.
+
+Een leeg blok is daarna alleen nog muur. `CheckForSolidMTiles` rekent de opgebruikte tegel (`$c4`) tot de gewoon-vaste tegels, dus de hoofdbotsing komt niet eens meer bij `PlayerHeadCollision` uit: je hoort de bonk, `NYSpd` zet je snelheid op `$01` zodat je weer daalt, en het blok verroert zich niet en geeft niets nog een keer.
+
+En een blok is aan alle kanten vast, niet alleen boven en onder: `BlockBufferColli_Side` doet er een aparte zijcontrole op en `ImpedePlayerMove` zet je horizontale snelheid op nul. Zonder dat kon je er dwars doorheen lopen, wat je zag zodra een agent er eentje raakte. Alleen de ondiepste overlap wordt opgelost, dus erop landen blijft landen en je hoofd stoten blijft stoten.
 
 Twee details die vaak verkeerd worden nagemaakt: SMB1 varieert de spronghoogte door bij het loslaten van de knop naar de _zware valzwaartekracht_ om te schakelen (niet door de opwaartse snelheid af te kappen), en de sprongboog wordt gekozen uit een tabel van vijf rijen op basis van je snelheid bij het afzetten: hard rennen springt hoger én strakker.
+
+**Twee bewuste afwijkingen van de ROM, allebei omdat het scherm anders liegt.** Een geplet schild valt hier. In de ROM doet het dat niet: `ReviveStunned` slaat `MoveD_EnemyVertically` over, dus een koopa die je boven een gat plet blijft in de lucht hangen tot hij weer opstaat. Dat leest voor iedereen die het ziet als een bug. En de onkwetsbaarheidsflits is een doorzichtige Mario in plaats van een verdwenen Mario: de ROM knippert het palet weg, maar de sprite helemaal weglaten haalt je juist op het moment dat je 'm het hardst nodig hebt van het scherm.
 
 **Coyote time zit er bewust niet in.** Het origineel heeft het niet: springen vereist `Player_State == 0`. Dat toevoegen zou de besturing moderner maken, maar aantoonbaar on-NES.
 
@@ -233,7 +239,9 @@ De schatting is het aantal frames dat je op zijn allerbest nog nodig hebt: de ho
 
 Precies gelijk dus, en dat is het hele punt: waar evolutie 27 miljoen frames simuleert om die route te vinden, leest de zoeker hem in een paar seconden van het model af. Tegelijk is dat ook de grens ervan: hij heeft het model nodig. Een lerende agent heeft alleen zijn ogen en mag het spel niet vooruitspoelen.
 
-Op het herhaalscherm ligt die route als oranje stippellijn onder de spoken, met een stip erop waar de zoeker op dat frame zou staan. Zo zie je precies waar een geleerde policy van de beste lijn afdwaalt. Het zoeken gebeurt in plakjes tussen de frames door, anders slaat de pagina een halve seconde over.
+Op het herhaalscherm ligt die route als oranje stippellijn onder de spoken, met een stip erop waar de zoeker op dat frame zou staan. Zo zie je precies waar een geleerde policy van de beste lijn afdwaalt.
+
+Die route wordt niet in de browser gezocht maar meegeleverd in `src/agent/routes.json`, net als de getrainde gewichten. Eén knoop uitrekenen kost ongeveer 3,4 ms en er gaan er een paar honderd in, dus zoeken tussen de frames door maakte de eerste seconden van een herhaling onbekijkbaar (60 knopen per frame is 400 ms in een frame van 16). Het is een zuivere functie van de engine en de leveldata, dus het hoort in een bestand en niet in de tijd van de speler. `npm run train-agent` schrijft het, en een test speelt elke route opnieuw af en faalt zodra hij het level niet meer haalt.
 
 `validate-levels` is dezelfde zoeker als snelle kanarie: hij simuleert zijn mogelijke zetten tegen de echte engine in plaats van sprongafstanden uit vaste constanten te gokken. Daardoor blijft hij kloppen als de physics veranderen; de vorige, handmatig afgestelde versie werd waardeloos zodra de getallen verschoven. De uitgebreidere controle is de getrainde agent (`npm test` speelt de opgeslagen beste genome per level opnieuw af en eist dat die het certificaat haalt).
 
@@ -278,7 +286,7 @@ const four = { ground: platform(0, 240, 480, 30), ledge: platform(120, 180, 80) 
 
 Sprites zijn tekst: elke regel is een rij pixels, een spatie is doorzichtig, elke letter is een kleur uit `PALETTE` in `src/sprite-frames.ts`. Gewoon de letters aanpassen. `npm test` controleert daarna of het frame rechthoekig is, of alle letters bestaan, en of het even groot is als de hitbox.
 
-Na het aanpassen van levelgeometrie: `npm run train-agent` opnieuw draaien, anders faalt de test die controleert of de opgeslagen AI-runs het level nog uitspelen.
+Na het aanpassen van levelgeometrie of physics: `npm run train-agent` opnieuw draaien. Die schrijft twee gegenereerde bestanden, `training-history.json` en `routes.json`, en er faalt een test per stuk zodra ze niet meer bij het spel passen.
 
 ## Hosten (GitHub Pages)
 

@@ -96,10 +96,12 @@ export const PHYSICS = {
   /**
    * BumpBlock zeroes Player_Y_Speed when you knock a solid block, so you stop
    * dead under it. BrickShatter leaves $fe instead: a broken brick lets you
-   * keep drifting up through the gap.
+   * keep drifting up through the gap. A block that is merely solid, which is
+   * what a spent one is, sends you back down with the $01 from NYSpd.
    */
   headBumpVelocity: 0,
   shatterVelocity: 0xfe - 0x100,
+  solidBumpVelocity: 0x01,
   /** JCoinC: the coin that pops out leaves at $fb and falls back. */
   coinPopVelocity: 0xfb - 0x100,
 
@@ -297,6 +299,12 @@ export type Block = {
   bounceTimer: number;
   /** What the bounce is showing on its way up, for the frames it lasts. */
   releasing: BlockContents;
+  /**
+   * Spent. CheckForSolidMTiles treats the used-block metatile ($c4) as plainly
+   * solid, so the head collision never reaches PlayerHeadCollision: you bonk,
+   * and the block does not budge or hand anything over a second time.
+   */
+  used: boolean;
 };
 
 export function createBlocks(definitions: BlockDef[]): Block[] {
@@ -310,6 +318,7 @@ export function createBlocks(definitions: BlockDef[]): Block[] {
     state: BlockState.Idle,
     bounceTimer: 0,
     releasing: BlockContents.Nothing,
+    used: false,
   }));
 }
 
@@ -582,6 +591,11 @@ export function moveEnemies(
           enemy.state = EnemyState.Gone;
         }
       }
+      // It has stopped walking, not stopped weighing anything. ReviveStunned
+      // skips MoveD_EnemyVertically, so in the ROM a shell stomped over a gap
+      // hangs there; here it falls, because a shell floating in mid-air reads
+      // as a bug to everyone who sees it.
+      fall(enemy, level, blocks);
       continue;
     }
     if (!enemy.awake) {
@@ -592,9 +606,7 @@ export function moveEnemies(
     }
 
     enemy.x += enemy.vx;
-    enemy.vy = Math.min(enemy.vy + PHYSICS.enemyGravity, PHYSICS.enemyMaxFallSpeed);
-    enemy.y += enemy.vy;
-    landOnPlatform(enemy, level, blocks);
+    fall(enemy, level, blocks);
 
     // The level's outer walls are the only thing that turns them around.
     if (enemy.x < 0) {
@@ -608,6 +620,13 @@ export function moveEnemies(
     }
   }
   runDownAnythingInTheWay(enemies);
+}
+
+/** Gravity and the ground under it, which every enemy is subject to. */
+function fall(enemy: Enemy, level: Level, blocks: Block[]): void {
+  enemy.vy = Math.min(enemy.vy + PHYSICS.enemyGravity, PHYSICS.enemyMaxFallSpeed);
+  enemy.y += enemy.vy;
+  landOnPlatform(enemy, level, blocks);
 }
 
 /** Direction and speed are set together, so the two can never disagree. */
@@ -719,13 +738,16 @@ function collectMushrooms(p: Player, mushrooms: Mushroom[]): void {
   }
 }
 
+/** What a frame of head-bumping came to: what came out, and whether it rang. */
+type BlockHit = { released: BlockContents; bumped: boolean };
+
 /**
  * PlayerHeadCollision: coming up under a block stops you dead against it and
  * knocks it. Big Mario shatters a plain brick; small Mario only rattles it.
  * Whatever was inside comes out, and the stamp is credited the moment it
  * pops, exactly as GiveOneCoin does: the coin flying up is only animation.
  */
-function bumpBlocks(p: Player, blocks: Block[], mushrooms: Mushroom[]): BlockContents {
+function bumpBlocks(p: Player, blocks: Block[], mushrooms: Mushroom[]): BlockHit {
   for (const block of blocks) {
     if (!isSolid(block)) {
       continue;
@@ -738,6 +760,13 @@ function bumpBlocks(p: Player, blocks: Block[], mushrooms: Mushroom[]): BlockCon
     }
 
     p.y = underside;
+    // A spent block is only in the way. You hear it and you stop, and that is
+    // all: no bounce, no second helping.
+    if (block.used) {
+      p.vy = PHYSICS.solidBumpVelocity;
+      return { released: BlockContents.Nothing, bumped: true };
+    }
+
     const shatters = block.kind === BlockKind.Brick && block.contains === BlockContents.Nothing && p.big;
     p.vy = shatters ? PHYSICS.shatterVelocity : PHYSICS.headBumpVelocity;
 
@@ -745,12 +774,35 @@ function bumpBlocks(p: Player, blocks: Block[], mushrooms: Mushroom[]): BlockCon
     block.contains = BlockContents.Nothing;
     block.bounceTimer = PHYSICS.blockBounceFrames;
     block.state = shatters ? BlockState.Broken : BlockState.Bumping;
+    block.used = block.releasing !== BlockContents.Nothing;
     if (block.releasing === BlockContents.Mushroom) {
       mushrooms.push(...createMushrooms([{ x: block.x, y: block.y - MUSHROOM_SIZE.h }]));
     }
-    return block.releasing;
+    return { released: block.releasing, bumped: true };
   }
-  return BlockContents.Nothing;
+  return { released: BlockContents.Nothing, bumped: false };
+}
+
+/**
+ * BlockBufferColli_Side: a block is a wall as well as a floor and a ceiling.
+ * Only the shallower overlap is resolved, so landing on one is still a
+ * landing and knocking your head on one is still a knock.
+ */
+function pushOutOfBlocks(p: Player, blocks: Block[]): void {
+  for (const block of blocks) {
+    if (!isSolid(block) || !overlaps(p, block)) {
+      continue;
+    }
+    const intoX = Math.min(p.x + p.w, block.x + block.w) - Math.max(p.x, block.x);
+    const intoY = Math.min(p.y + p.h, block.y + block.h) - Math.max(p.y, block.y);
+    if (intoX >= intoY) {
+      continue;
+    }
+    // ImpedePlayerMove: the speed goes as well as the position, or you walk
+    // straight back in on the next frame.
+    p.x = p.x + p.w / 2 < block.x + block.w / 2 ? block.x - p.w : block.x + block.w;
+    p.vx = 0;
+  }
 }
 
 /** The bounce is a timer, and the coin popping out of it rides the same one. */
@@ -780,7 +832,7 @@ export function stepWorld(
   level: Level,
   input: Input,
   view: { cameraX: number; framerule: boolean }
-): { died: boolean; coins: number } {
+): { died: boolean; coins: number; bumps: number } {
   const { player: p, enemies, mushrooms, blocks } = world;
   if (view.framerule && p.invincibleFramerules > 0) {
     p.invincibleFramerules--;
@@ -803,7 +855,8 @@ export function stepWorld(
   // Age what happened before deciding what happens now, so a block knocked
   // this frame still has its whole bounce ahead of it.
   settleBlocks(blocks);
-  const released = bumpBlocks(p, blocks, mushrooms);
+  const hit = bumpBlocks(p, blocks, mushrooms);
+  pushOutOfBlocks(p, blocks);
   resolvePlatformCollisions(p, level, blocks);
   // SMB1 never scrolls back, so the left edge of the view is a wall.
   p.x = clamp(p.x, view.cameraX, level.width - p.w);
@@ -816,6 +869,7 @@ export function stepWorld(
   const fellOut = p.y > CANVAS_H + PHYSICS.deathFallMargin;
   return {
     died: hitByEnemy || fellOut,
-    coins: released === BlockContents.Coin ? 1 : 0,
+    coins: hit.released === BlockContents.Coin ? 1 : 0,
+    bumps: hit.bumped ? 1 : 0,
   };
 }

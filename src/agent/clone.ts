@@ -50,7 +50,7 @@ const GENERATIONS = 100;
  * would grow it past what a browser can chew through in a frame, and keeping
  * none makes the student chase the last mistake and forget the previous.
  */
-const CORRECTION_RUNS_KEPT = 5;
+const CORRECTION_RUNS_KEPT = 12;
 const LEARNING_RATE = 0.5;
 const TRAINING_SEED = 20260913;
 

@@ -8,6 +8,8 @@ import { writeFileSync } from "node:fs";
 import { LEVELS } from "../engine";
 import { GENERATIONS, POPULATION_SIZE, TRAINING_SEED, createTrainer, type LevelHistory } from "./evolution";
 import { DEFAULT_ARCHITECTURE } from "./policy";
+import { searchLevel } from "./search";
+import { encodeInput } from "./routes";
 
 export type { GenerationRecord, LevelHistory } from "./evolution";
 
@@ -22,6 +24,27 @@ const RESTARTS = 3;
 const FPS = 60;
 const SECONDS_PER_HOUR = 3600;
 const MS_PER_SECOND = 1000;
+
+/**
+ * The A* route per level, stored rather than searched in the browser: it is a
+ * pure function of the engine and the levels, and searching one takes seconds,
+ * which the replay screen cannot spend between two frames.
+ */
+function writeRoutes(): void {
+  console.log("\nSearching the fastest route per level...");
+  const routes = LEVELS.map((_, levelIndex) => {
+    const found = searchLevel(levelIndex);
+    console.log(
+      `  level ${levelIndex + 1}: ${found.solved ? `${found.frames} frames` : "NO ROUTE"} ` +
+        `(${found.expanded} plans)`
+    );
+    return { level: levelIndex, frames: found.frames, inputs: found.inputs.map(encodeInput) };
+  });
+
+  const routesPath = new URL("./routes.json", import.meta.url);
+  writeFileSync(routesPath, JSON.stringify({ routes }));
+  console.log(`Wrote ${routesPath.pathname}`);
+}
 
 function fitnessOfBest(history: LevelHistory): number {
   return history.generations[history.bestGeneration].bestFitness;
@@ -65,6 +88,7 @@ function main(): void {
 
   const outPath = new URL("./training-history.json", import.meta.url);
   writeFileSync(outPath, JSON.stringify({ architecture: DEFAULT_ARCHITECTURE, levels }));
+  writeRoutes();
 
   // Training runs headless and as fast as the CPU allows: no canvas, no
   // waiting on frames. Worth stating plainly, because at 60fps this many

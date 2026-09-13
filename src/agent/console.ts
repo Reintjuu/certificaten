@@ -38,7 +38,7 @@ import { decodeGenome } from "./neat";
 import { drawNeatNetwork } from "./neat-view";
 import { startTrainingSession, type TrainingSession } from "./training-view";
 import { startReplaySession, type Ghost, type ReplaySession } from "./replay-view";
-import { createSearch, type Search } from "./search";
+import { routeFor } from "./routes";
 import { startRun, stepRun, RunOutcome } from "./run";
 
 type Screen = "menu" | "replay" | "training" | "weights" | "archive";
@@ -101,20 +101,21 @@ function clearEdits(): void {
 }
 
 /**
- * The A* route for each level, worked out once and kept. It is the line every
- * learned policy is trying to find, so the replay screen draws it underneath
- * them; searching is fast but not free, so it runs in slices between frames
- * rather than stopping the page while it thinks.
+ * Where the A* route puts the player on every frame. Read from the file the
+ * trainer writes rather than searched here: one search is a few seconds of
+ * work, and doing that between frames made the first seconds of a replay
+ * stutter.
  */
-const routes: (readonly { x: number; y: number }[] | null)[] = LEVELS.map(() => null);
-let searching: { level: number; search: Search } | null = null;
-const SEARCH_NODES_PER_FRAME = 60;
+const routePoints = new Map<number, { x: number; y: number }[]>();
 
-/** Where the player stands on every frame of a found route. */
-function routePoints(inputs: Input[], levelIndex: number): { x: number; y: number }[] {
+function routeToBeat(levelIndex: number): { x: number; y: number }[] {
+  const known = routePoints.get(levelIndex);
+  if (known !== undefined) {
+    return known;
+  }
   const points: { x: number; y: number }[] = [];
   let run = startRun(levelIndex);
-  for (const input of inputs) {
+  for (const input of routeFor(levelIndex) ?? []) {
     if (run.outcome !== RunOutcome.Running) {
       break;
     }
@@ -122,23 +123,8 @@ function routePoints(inputs: Input[], levelIndex: number): { x: number; y: numbe
     const { player } = run.state;
     points.push({ x: player.x + player.w / 2, y: player.y + 12 });
   }
+  routePoints.set(levelIndex, points);
   return points;
-}
-
-function advanceSearch(): void {
-  if (routes[levelIndex] !== null) {
-    return;
-  }
-  if (searching?.level !== levelIndex) {
-    searching = { level: levelIndex, search: createSearch(levelIndex) };
-  }
-  if (!searching.search.expand(SEARCH_NODES_PER_FRAME)) {
-    return;
-  }
-  const found = searching.search.result;
-  routes[searching.level] = found.solved ? routePoints(found.inputs, searching.level) : [];
-  searching = null;
-  startReplay(levelIndex, generationIndex, showAllGenerations);
 }
 
 function startReplay(level: number, generation: number, all: boolean): void {
@@ -150,7 +136,7 @@ function startReplay(level: number, generation: number, all: boolean): void {
 
   replay = startReplaySession({
     levelIndex: level,
-    routeToBeat: routes[level] ?? undefined,
+    routeToBeat: routeToBeat(level),
     policy: isNeat(history.architecture) ? neatPolicy : undefined,
     architecture: history.architecture,
     generations: levelHistory().generations,
@@ -628,7 +614,6 @@ function tick(): void {
   } else if (screen === "archive") {
     drawArchiveScreen();
   } else {
-    advanceSearch();
     advanceReplay();
     drawReplay();
   }

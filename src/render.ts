@@ -62,6 +62,9 @@ export const COLORS = {
   routeToBeat: "#ff8c1a",
 } as const;
 
+/** How solid Mario looks on the blink of the injury flash. */
+const INJURY_ALPHA = 0.35;
+
 /** The gap text and bars keep from the edge of the view. */
 export const SCREEN_MARGIN = 6;
 
@@ -169,12 +172,10 @@ function blockFrame(block: Block): Frame | null {
   if (block.state === BlockState.Broken) {
     return null;
   }
-  if (block.kind === BlockKind.Brick) {
-    return BrickBlock;
+  if (block.used) {
+    return EmptyBlock;
   }
-  return block.contains === BlockContents.Nothing && block.state !== BlockState.Bumping
-    ? EmptyBlock
-    : QuestionBlock;
+  return block.kind === BlockKind.Brick ? BrickBlock : QuestionBlock;
 }
 
 function drawBlocks(ctx: CanvasRenderingContext2D, blocks: Block[]): void {
@@ -216,10 +217,14 @@ export function drawEntities(ctx: CanvasRenderingContext2D, state: GameState): v
   // The sprite stands on the hitbox's feet; big Mario's is taller than his
   // box, so the overhang goes above his head, as in the ROM.
   const spriteY = player.y + player.h - frame.length;
-  // Blink while the injury timer runs, the way the ROM flashes the palette.
-  if (player.invincibleFramerules % 2 === 0) {
-    drawSprite(ctx, frame, player.x, spriteY, 1, player.facing === -1);
-  }
+  // The ROM flashes the palette while the injury timer runs. Dropping the
+  // sprite altogether on alternate framerules says the same thing, but it
+  // takes Mario off the screen at exactly the moment you most need to see
+  // where he is, so the flash is a fade instead.
+  const hurt = player.invincibleFramerules > 0 && player.invincibleFramerules % 2 !== 0;
+  ctx.globalAlpha = hurt ? INJURY_ALPHA : 1;
+  drawSprite(ctx, frame, player.x, spriteY, 1, player.facing === -1);
+  ctx.globalAlpha = 1;
 }
 
 /** Bottom left, out of the HUD's way. Only drawn once there is a reading. */

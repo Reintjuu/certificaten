@@ -4,7 +4,7 @@
 // what changed and hands the answer to the synth. Keeping the deciding apart
 // from the playing is what makes it testable at all, since a WebAudio context
 // is not something a unit test can listen to.
-import { BlockState, EnemyState, PHYSICS, isActive, type GameState } from "./engine";
+import { BlockState, EnemyState, isActive, type GameState } from "./engine";
 
 export const SoundEvent = {
   Jump: "jump",
@@ -36,10 +36,6 @@ function countBroken(state: GameState): number {
   return state.blocks.filter((block) => block.state === BlockState.Broken).length;
 }
 
-function countBumped(state: GameState): number {
-  return state.blocks.filter((block) => block.bounceTimer === PHYSICS.blockBounceFrames).length;
-}
-
 function countTaken(state: GameState): number {
   return state.mushrooms.filter((mushroom) => mushroom.taken).length;
 }
@@ -69,7 +65,9 @@ export function eventsBetween(previous: GameState, next: GameState): SoundEvent[
     events.push(SoundEvent.Stamp);
   } else if (countBroken(next) > countBroken(previous)) {
     events.push(SoundEvent.Break);
-  } else if (countBumped(next) > countBumped(previous)) {
+  } else if (next.bumps > previous.bumps) {
+    // Counted rather than read off the bounce, because a spent block rings
+    // without moving at all and two blocks can be knocked in one frame.
     events.push(SoundEvent.Bump);
   }
   // Losing your size is a hit; gaining it is the mushroom above.
