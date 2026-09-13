@@ -30,13 +30,7 @@ import {
   startRun,
   type Point,
 } from "./run";
-import {
-  bestGenerationOf,
-  type GenerationRecord,
-  type LevelHistory,
-  type Trainer,
-  type TrainerOptions,
-} from "./evolution";
+import { makeTrainer, type GenerationRecord, type Trainer, type TrainerOptions } from "./evolution";
 
 /**
  * Passes over the lesson set between two points on the chart, and how many of
@@ -125,24 +119,14 @@ export function createCloneTrainerUsing(teacherFor: (levelIndex: number) => Geno
       });
     }
 
-    return {
+    return makeTrainer({
       levelIndex,
       architecture,
       totalGenerations: GENERATIONS,
       generations,
-      get lastPath() {
-        return lastPath;
-      },
-      get framesSimulated() {
-        return framesSimulated;
-      },
-      get done() {
-        return generations.length >= GENERATIONS;
-      },
-      get generationProgress() {
-        return epochsThisGeneration / EPOCHS_PER_GENERATION;
-      },
-      /** One pass over the lessons, which is a few milliseconds. */
+      lastPath: () => lastPath,
+      framesSimulated: () => framesSimulated,
+      generationProgress: () => epochsThisGeneration / EPOCHS_PER_GENERATION,
       evaluateNext(): boolean {
         const error = runEpoch();
         epochsThisGeneration++;
@@ -153,16 +137,7 @@ export function createCloneTrainerUsing(teacherFor: (levelIndex: number) => Geno
         epochsThisGeneration = 0;
         return true;
       },
-      runGeneration(): GenerationRecord {
-        while (!this.evaluateNext()) {
-          // Keep studying until the generation is complete.
-        }
-        return generations[generations.length - 1];
-      },
-      toHistory(): LevelHistory {
-        return { level: levelIndex, generations, bestGeneration: bestGenerationOf(generations) };
-      },
-    };
+    });
   };
 }
 

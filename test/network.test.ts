@@ -21,9 +21,14 @@ import {
 } from "../src/agent/policy";
 import { checkHistory, createTrainer, type TrainingHistory } from "../src/agent/evolution";
 import { createCmaesTrainer } from "../src/agent/cmaes";
+import { createReinforceTrainer } from "../src/agent/reinforce";
+import { HEIGHT_BINS, REACH_BINS, binOf, createMapElitesTrainer } from "../src/agent/map-elites";
+import { recordLessons } from "../src/agent/clone";
 import { parseHiddenLayers } from "../src/agent/console";
 import { DQN_ARCHITECTURE } from "../src/agent/dqn";
 import { LEVELS, createPlayingState } from "../src/engine";
+import { finishRun, startRun } from "../src/agent/run";
+import { readFileSync } from "node:fs";
 
 describe("the shape of the network", () => {
   test("every input and output has a name, in the order the features are built", () => {
@@ -204,5 +209,65 @@ describe("search that learns where to look", () => {
       `CMA-ES simulated ${cmaesFrames} frames against the evolution's ${evolutionFrames}`
     );
     assert.ok(cmaesSolved > 0, "CMA-ES should reach the certificate within forty generations");
+  });
+});
+
+describe("what every trainer shares", () => {
+  const factories = [
+    ["evolutie", createTrainer],
+    ["gradient", createReinforceTrainer],
+    ["CMA-ES", createCmaesTrainer],
+    ["MAP-Elites", createMapElitesTrainer],
+  ] as const;
+
+  for (const [name, make] of factories) {
+    test(`${name}: the shared readings stay live`, () => {
+      // Regression: MAP-Elites once spread the shared builder into a new object
+      // to bolt its archive on, which reads the getters once and freezes them.
+      // framesSimulated would then sit at zero and done would never turn true.
+      const trainer = make(0, { seed: 5 });
+      const before = trainer.framesSimulated;
+      assert.equal(trainer.done, false);
+
+      trainer.runGeneration();
+      const after = trainer.framesSimulated;
+      assert.equal(before, 0);
+      assert.ok(after > before, "frames simulated should count up");
+      assert.equal(trainer.generations.length, 1);
+      assert.equal(trainer.toHistory().level, 0);
+    });
+  }
+});
+
+describe("the pieces the methods are built from", () => {
+  test("a lesson set is one entry per frame the teacher played", () => {
+    const history = JSON.parse(
+      readFileSync(new URL("../src/agent/training-history.json", import.meta.url), "utf8")
+    ) as TrainingHistory;
+    const level = history.levels[0];
+    const teacher = level.generations[level.bestGeneration].genome;
+
+    const played = finishRun(teacher, 0, DEFAULT_ARCHITECTURE);
+    const lessons = recordLessons(teacher, 0, DEFAULT_ARCHITECTURE);
+
+    assert.equal(lessons.length, played.frames, "a lesson for every frame it was asked to act");
+    assert.ok(
+      lessons.every((lesson) => lesson.inputs.length === DEFAULT_ARCHITECTURE.inputs),
+      "every lesson sees the same thing the network does"
+    );
+  });
+
+  test("a behaviour lands in the cell its reach and height say it should", () => {
+    // The two axes of the archive, so a mistake here would quietly file every
+    // agent under the same behaviour and the grid would say nothing.
+    const start = startRun(0);
+    const first = binOf(start, 0);
+    assert.ok(first >= 0 && first < REACH_BINS * HEIGHT_BINS);
+
+    const further = { ...start, state: { ...start.state, player: { ...start.state.player, x: 1400 } } };
+    assert.ok(binOf(further, 0) > first, "getting further along moves it along the row");
+
+    const higher = { ...start, highest: 0 };
+    assert.notEqual(binOf(higher, 0), first, "climbing moves it to another row");
   });
 });

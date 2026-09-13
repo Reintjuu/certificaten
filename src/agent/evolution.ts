@@ -152,11 +152,64 @@ function nextGeneration(population: Genome[], fitnesses: number[], random: Rando
   return offspring;
 }
 
-export function bestGenerationOf(generations: GenerationRecord[]): number {
+function bestGenerationOf(generations: GenerationRecord[]): number {
   return generations.reduce(
     (best, record, index) => (record.bestFitness > generations[best].bestFitness ? index : best),
     0
   );
+}
+
+/**
+ * What a way of training actually has to provide. Everything else about a
+ * trainer is the same whichever method it is, and six copies of it is six
+ * chances for them to drift apart.
+ */
+export type TrainerParts = {
+  levelIndex: number;
+  architecture: Architecture;
+  totalGenerations: number;
+  generations: GenerationRecord[];
+  /** Scores one candidate; true once that completed a generation. */
+  evaluateNext: () => boolean;
+  framesSimulated: () => number;
+  /** How far the generation in progress has got, 0..1. */
+  generationProgress: () => number;
+  lastPath: () => readonly Point[];
+};
+
+export function makeTrainer(parts: TrainerParts): Trainer {
+  return {
+    levelIndex: parts.levelIndex,
+    architecture: parts.architecture,
+    totalGenerations: parts.totalGenerations,
+    generations: parts.generations,
+    get lastPath() {
+      return parts.lastPath();
+    },
+    get framesSimulated() {
+      return parts.framesSimulated();
+    },
+    get done() {
+      return parts.generations.length >= parts.totalGenerations;
+    },
+    get generationProgress() {
+      return parts.generationProgress();
+    },
+    evaluateNext: parts.evaluateNext,
+    runGeneration(): GenerationRecord {
+      while (!parts.evaluateNext()) {
+        // Keep going until the generation is complete.
+      }
+      return parts.generations[parts.generations.length - 1];
+    },
+    toHistory(): LevelHistory {
+      return {
+        level: parts.levelIndex,
+        generations: parts.generations,
+        bestGeneration: bestGenerationOf(parts.generations),
+      };
+    },
+  };
 }
 
 export function createTrainer(levelIndex: number, options: TrainerOptions = {}): Trainer {
@@ -182,23 +235,14 @@ export function createTrainer(levelIndex: number, options: TrainerOptions = {}):
     results = [];
   }
 
-  return {
+  return makeTrainer({
     levelIndex,
     architecture,
     totalGenerations: GENERATIONS,
     generations,
-    get lastPath() {
-      return lastPath;
-    },
-    get framesSimulated() {
-      return framesSimulated;
-    },
-    get done() {
-      return generations.length >= GENERATIONS;
-    },
-    get generationProgress() {
-      return results.length / POPULATION_SIZE;
-    },
+    lastPath: () => lastPath,
+    framesSimulated: () => framesSimulated,
+    generationProgress: () => results.length / POPULATION_SIZE,
     evaluateNext(): boolean {
       lastPath = options.recordPaths === true ? [] : lastPath;
       const evaluation = evaluate(
@@ -215,14 +259,5 @@ export function createTrainer(levelIndex: number, options: TrainerOptions = {}):
       closeGeneration();
       return true;
     },
-    runGeneration(): GenerationRecord {
-      while (!this.evaluateNext()) {
-        // Keep scoring until the generation is complete.
-      }
-      return generations[generations.length - 1];
-    },
-    toHistory(): LevelHistory {
-      return { level: levelIndex, generations, bestGeneration: bestGenerationOf(generations) };
-    },
-  };
+  });
 }

@@ -11,13 +11,7 @@ import { CANVAS_H, LEVELS } from "../engine";
 import { DEFAULT_ARCHITECTURE, randomGenome, roundWeight, type Genome } from "./policy";
 import { createRandom, type Random } from "./random";
 import { RunOutcome, finishRun, fitnessOf, type Point, type Run } from "./run";
-import {
-  bestGenerationOf,
-  type GenerationRecord,
-  type LevelHistory,
-  type Trainer,
-  type TrainerOptions,
-} from "./evolution";
+import { makeTrainer, type GenerationRecord, type Trainer, type TrainerOptions } from "./evolution";
 
 /** Cells across the two behaviour axes. */
 export const REACH_BINS = 16;
@@ -111,43 +105,29 @@ export function createMapElitesTrainer(levelIndex: number, options: TrainerOptio
     });
   }
 
-  return {
-    levelIndex,
-    architecture,
-    totalGenerations: GENERATIONS,
-    generations,
-    /** The archive itself, which is the thing worth looking at. */
-    archive,
-    get lastPath() {
-      return lastPath;
-    },
-    get framesSimulated() {
-      return framesSimulated;
-    },
-    get done() {
-      return generations.length >= GENERATIONS;
-    },
-    get generationProgress() {
-      return triedThisGeneration / CANDIDATES_PER_GENERATION;
-    },
-    evaluateNext(): boolean {
-      tryCandidate();
-      triedThisGeneration++;
-      if (triedThisGeneration < CANDIDATES_PER_GENERATION) {
-        return false;
-      }
-      closeGeneration();
-      triedThisGeneration = 0;
-      return true;
-    },
-    runGeneration(): GenerationRecord {
-      while (!this.evaluateNext()) {
-        // Keep trying until the generation is complete.
-      }
-      return generations[generations.length - 1];
-    },
-    toHistory(): LevelHistory {
-      return { level: levelIndex, generations, bestGeneration: bestGenerationOf(generations) };
-    },
-  };
+  // Assigned onto the trainer rather than spread into a new object: the
+  // shared builder returns getters, and spreading would read them once and
+  // freeze done and framesSimulated at their starting values.
+  return Object.assign(
+    makeTrainer({
+      levelIndex,
+      architecture,
+      totalGenerations: GENERATIONS,
+      generations,
+      lastPath: () => lastPath,
+      framesSimulated: () => framesSimulated,
+      generationProgress: () => triedThisGeneration / CANDIDATES_PER_GENERATION,
+      evaluateNext(): boolean {
+        tryCandidate();
+        triedThisGeneration++;
+        if (triedThisGeneration < CANDIDATES_PER_GENERATION) {
+          return false;
+        }
+        closeGeneration();
+        triedThisGeneration = 0;
+        return true;
+      },
+    }),
+    { archive }
+  );
 }

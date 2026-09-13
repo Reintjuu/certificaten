@@ -32,13 +32,7 @@ import {
   type Point,
   type Run,
 } from "./run";
-import {
-  bestGenerationOf,
-  type GenerationRecord,
-  type LevelHistory,
-  type Trainer,
-  type TrainerOptions,
-} from "./evolution";
+import { makeTrainer, type GenerationRecord, type Trainer, type TrainerOptions } from "./evolution";
 
 /** Episodes per weight update. One episode's gradient is far too noisy. */
 const EPISODES_PER_UPDATE = 40;
@@ -201,23 +195,14 @@ export function createReinforceTrainer(levelIndex: number, options: TrainerOptio
     batch = [];
   }
 
-  return {
+  return makeTrainer({
     levelIndex,
     architecture,
     totalGenerations: UPDATES,
     generations,
-    get lastPath() {
-      return lastPath;
-    },
-    get framesSimulated() {
-      return framesSimulated;
-    },
-    get done() {
-      return generations.length >= UPDATES;
-    },
-    get generationProgress() {
-      return batch.length / EPISODES_PER_UPDATE;
-    },
+    lastPath: () => lastPath,
+    framesSimulated: () => framesSimulated,
+    generationProgress: () => batch.length / EPISODES_PER_UPDATE,
     evaluateNext(): boolean {
       lastPath = options.recordPaths === true ? [] : lastPath;
       const episode = playEpisode(
@@ -235,14 +220,5 @@ export function createReinforceTrainer(levelIndex: number, options: TrainerOptio
       applyBatch();
       return true;
     },
-    runGeneration(): GenerationRecord {
-      while (!this.evaluateNext()) {
-        // Keep playing until the batch is full.
-      }
-      return generations[generations.length - 1];
-    },
-    toHistory(): LevelHistory {
-      return { level: levelIndex, generations, bestGeneration: bestGenerationOf(generations) };
-    },
-  };
+  });
 }

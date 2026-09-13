@@ -35,13 +35,7 @@ import {
   type Point,
   type Run,
 } from "./run";
-import {
-  bestGenerationOf,
-  type GenerationRecord,
-  type LevelHistory,
-  type Trainer,
-  type TrainerOptions,
-} from "./evolution";
+import { makeTrainer, type GenerationRecord, type Trainer, type TrainerOptions } from "./evolution";
 
 /** The value head has one output per action rather than three controls. */
 export const DQN_ARCHITECTURE: Architecture = {
@@ -232,23 +226,14 @@ export function createDqnTrainer(levelIndex: number, options: TrainerOptions = {
     });
   }
 
-  return {
+  return makeTrainer({
     levelIndex,
     architecture,
     totalGenerations: GENERATIONS,
     generations,
-    get lastPath() {
-      return lastPath;
-    },
-    get framesSimulated() {
-      return framesSimulated;
-    },
-    get done() {
-      return generations.length >= GENERATIONS;
-    },
-    get generationProgress() {
-      return episodesThisGeneration / EPISODES_PER_GENERATION;
-    },
+    lastPath: () => lastPath,
+    framesSimulated: () => framesSimulated,
+    generationProgress: () => episodesThisGeneration / EPISODES_PER_GENERATION,
     evaluateNext(): boolean {
       if (!advanceEpisode(random)) {
         return false;
@@ -261,14 +246,5 @@ export function createDqnTrainer(levelIndex: number, options: TrainerOptions = {
       episodesThisGeneration = 0;
       return true;
     },
-    runGeneration(): GenerationRecord {
-      while (!this.evaluateNext()) {
-        // Keep playing until the generation is complete.
-      }
-      return generations[generations.length - 1];
-    },
-    toHistory(): LevelHistory {
-      return { level: levelIndex, generations, bestGeneration: bestGenerationOf(generations) };
-    },
-  };
+  });
 }

@@ -11,14 +11,7 @@
 import { DEFAULT_ARCHITECTURE, genomeSize, roundWeight, type Genome } from "./policy";
 import { createRandom, type Random } from "./random";
 import { RunOutcome, finishRun, fitnessOf, type Point } from "./run";
-import {
-  bestGenerationOf,
-  evaluate,
-  type GenerationRecord,
-  type LevelHistory,
-  type Trainer,
-  type TrainerOptions,
-} from "./evolution";
+import { makeTrainer, evaluate, type GenerationRecord, type Trainer, type TrainerOptions } from "./evolution";
 
 /** Candidates per generation, and how many of them get a say in the next mean. */
 const POPULATION = 24;
@@ -117,23 +110,14 @@ export function createCmaesTrainer(levelIndex: number, options: TrainerOptions =
 
   fillPopulation();
 
-  return {
+  return makeTrainer({
     levelIndex,
     architecture,
     totalGenerations: GENERATIONS,
     generations,
-    get lastPath() {
-      return lastPath;
-    },
-    get framesSimulated() {
-      return framesSimulated;
-    },
-    get done() {
-      return generations.length >= GENERATIONS;
-    },
-    get generationProgress() {
-      return scored.length / POPULATION;
-    },
+    lastPath: () => lastPath,
+    framesSimulated: () => framesSimulated,
+    generationProgress: () => scored.length / POPULATION,
     evaluateNext(): boolean {
       const candidate = population[scored.length];
       const evaluation = evaluate(candidate, levelIndex, architecture);
@@ -146,14 +130,5 @@ export function createCmaesTrainer(levelIndex: number, options: TrainerOptions =
       closeGeneration();
       return true;
     },
-    runGeneration(): GenerationRecord {
-      while (!this.evaluateNext()) {
-        // Keep scoring until the generation is complete.
-      }
-      return generations[generations.length - 1];
-    },
-    toHistory(): LevelHistory {
-      return { level: levelIndex, generations, bestGeneration: bestGenerationOf(generations) };
-    },
-  };
+  });
 }
