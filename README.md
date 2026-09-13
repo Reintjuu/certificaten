@@ -213,6 +213,19 @@ Op het herhaalscherm ligt die route als oranje stippellijn onder de spoken, met 
 
 `validate-levels` is dezelfde zoeker als snelle kanarie: hij simuleert zijn mogelijke zetten tegen de echte engine in plaats van sprongafstanden uit vaste constanten te gokken. Daardoor blijft hij kloppen als de physics veranderen; de vorige, handmatig afgestelde versie werd waardeloos zodra de getallen verschoven. De uitgebreidere controle is de getrainde agent (`npm test` speelt de opgeslagen beste genome per level opnieuw af en eist dat die het certificaat haalt).
 
+## Op een telefoon
+
+Er is geen toetsenbord, dus de toetsen krijgen knoppen. Ze voeren geen tweede soort invoer in: een knop zet precies de toets waar hij voor staat in dezelfde twee verzamelingen waar het toetsenbord in schrijft, dus de menu's, de dialoog en de physics kunnen het verschil niet zien. Een test eist dat elke knop een toets stuurt die het spel ook echt leest, zodat een hernoemde binding daar stukgaat in plaats van stilletjes niets te doen.
+
+Wat er verder anders is op een aanraakscherm:
+
+- De pad verschijnt pas als er iets te sturen valt. Op het titelscherm en in de AI-console tik je, en dan ligt een pad in de weg.
+- Tikken op het beeld is de bevestigknop, zodat je door de dialoog komt. Bewust niet dezelfde toets als springen, anders was elke tik tijdens het spelen ook een sprong, en bewust niet actief in de menu's, waar een tik al "deze regel" betekent.
+- De knoppen zijn in `vmin` gemaakt, want in `vw` worden ze in liggende stand enorm. Pointer capture houdt een duim vast die van de knop af glijdt; zonder dat ziet de knop het loslaten nooit en rent de speler uit zichzelf door. Als capture niet lukt gaat de druk gewoon door, want de toets vasthouden is belangrijker dan de vinger volgen.
+- Het beeld wordt zo groot als past: de volle breedte staand, de volle hoogte liggend, want daar loopt 16:9 het eerst vast.
+
+De aparte testprojecten in `playwright.config.ts` zorgen dat dit ook echt op een telefoonprofiel wordt gecontroleerd: knoppen indrukken, vasthouden, loslaten en zien dat het beeld meebeweegt.
+
 ## Visuele regressietests
 
 Alles hierboven test getallen. Een sprite die twee pixels opschuift, een blok dat achter een platform verdwijnt of een letter die van het scherm valt haalt geen enkele assertie, en dat zijn nou precies de fouten die je meteen ziet als je kijkt. Daarom staat er een tweede suite naast: `npm run test:visual` tekent een reeks scenes en vergelijkt ze **pixel voor pixel** met vastgelegde plaatjes in `visual/scenes.spec.ts-snapshots/`.

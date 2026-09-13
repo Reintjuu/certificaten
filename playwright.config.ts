@@ -25,7 +25,11 @@ export default defineConfig({
     // rather than the game's drawing.
     deviceScaleFactor: 1,
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] }, testIgnore: "**/phone.spec.ts" },
+    // A real phone profile: coarse pointer, touch events, portrait screen.
+    { name: "phone", use: { ...devices["Pixel 7"] }, testMatch: "**/phone.spec.ts" },
+  ],
   webServer: {
     command: "npm run dev -- --port 5173 --strictPort",
     url: "http://localhost:5173/visual/scenes.html",

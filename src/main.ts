@@ -16,6 +16,7 @@ import { createFrameRate } from "./fps";
 import { eventsBetween } from "./sound-events";
 import { isMuted, play, toggleMuted, unlockSound } from "./sound";
 import { KEY_BINDINGS, consumesKey, readInput, readMenuInput } from "./input";
+import { attachTapToConfirm, attachTouchControls, showTouchControls, wantsTouchControls } from "./touch";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game")!;
 const ctx = canvas.getContext("2d")!;
@@ -23,6 +24,7 @@ ctx.imageSmoothingEnabled = false;
 
 const consoleContainer = document.querySelector<HTMLElement>("#console")!;
 const controlsHint = document.querySelector<HTMLElement>("#controls")!;
+const touchPad = document.querySelector<HTMLElement>("#touch")!;
 
 const RESTART_PROMPT = "DRUK OP R: OPNIEUW";
 
@@ -35,6 +37,16 @@ let running = true;
 
 const frameRate = createFrameRate();
 let showFrameRate = false;
+
+// On a phone the keyboard is not coming, so the keys get buttons. They write
+// into the same two sets the keyboard does, so nothing else has to know.
+const onTouchDevice = wantsTouchControls();
+if (onTouchDevice) {
+  document.body.classList.add("touch");
+  attachTouchControls(touchPad, { held: heldKeys, pressed: pressedKeys });
+  attachTapToConfirm(canvas, { held: heldKeys, pressed: pressedKeys }, () => state.phase !== "title");
+  controlsHint.textContent = "Tik om te kiezen · knoppen onderaan om te spelen";
+}
 
 addEventListener("keydown", (event) => {
   // Leave shortcuts alone: Ctrl+R must still reload the page.
@@ -80,6 +92,7 @@ function startGame(): void {
 function openAgentConsole(): void {
   running = false;
   controlsHint.hidden = true;
+  showTouchControls(touchPad, false);
   void import("./agent/console").then(({ openConsole }) => {
     openConsole({
       canvas,
@@ -237,6 +250,10 @@ function advanceTitle(): void {
 function loop(): void {
   if (!running) {
     return;
+  }
+  if (onTouchDevice) {
+    // Nothing to steer on the title screen, and a pad over it is in the way.
+    showTouchControls(touchPad, state.phase !== "title");
   }
   const before = state;
   if (state.phase === "title") {
