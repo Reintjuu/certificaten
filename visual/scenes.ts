@@ -58,6 +58,17 @@ const SCENES = new Map<string, () => void>(
       ).draw(ctx, 0);
     },
 
+    /** A menu with as many rows as the AI console has, which used to print its
+     * first row straight through the title. */
+    "long-menu"(): void {
+      const rows = ["BEKIJK BESTE RUN", "ALLE GENERATIES", "TRAIN OPNIEUW", "ARCHIEF"];
+      const more = ["OPGESLAGEN GEWICHTEN", "DOWNLOAD DATA", "SPEEL ZELF"];
+      new Menu(
+        "AI CONSOLE",
+        [...rows, ...more].map((label) => ({ label, run: (): void => undefined }))
+      ).draw(ctx, 0);
+    },
+
     "level-1-start": (): void => {
       paint(createPlayingState(0), 0);
     },
