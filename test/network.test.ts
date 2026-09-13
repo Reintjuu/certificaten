@@ -24,7 +24,9 @@ import { createCmaesTrainer } from "../src/agent/cmaes";
 import { createReinforceTrainer } from "../src/agent/reinforce";
 import { HEIGHT_BINS, REACH_BINS, binOf, createMapElitesTrainer } from "../src/agent/map-elites";
 import { recordLessons } from "../src/agent/clone";
-import { parseHiddenLayers } from "../src/agent/console";
+import { parseHiddenLayers } from "../src/agent/console-chrome";
+import { createWeightEditor } from "../src/agent/weight-editing";
+import { createRandom } from "../src/agent/random";
 import { DQN_ARCHITECTURE } from "../src/agent/dqn";
 import { LEVELS, createPlayingState } from "../src/engine";
 import { finishRun, startRun } from "../src/agent/run";
@@ -269,5 +271,63 @@ describe("the pieces the methods are built from", () => {
 
     const higher = { ...start, highest: 0 };
     assert.notEqual(binOf(higher, 0), first, "climbing moves it to another row");
+  });
+});
+
+describe("editing a weight by hand", () => {
+  const architecture = DEFAULT_ARCHITECTURE;
+  const recorded = randomGenome(createRandom(4), architecture);
+  const target = { architecture, recorded, levelIndex: 0 };
+  const connection = { layer: 0, to: 2, from: 3 };
+  const index = layoutOf(architecture)[connection.layer].weight(connection.to, connection.from);
+
+  test("nothing is said until you pick a connection", () => {
+    const editor = createWeightEditor(() => undefined);
+    assert.equal(editor.describe(target, recorded), null);
+    assert.equal(editor.edited, null);
+  });
+
+  test("an arrow moves exactly the weight you picked, and nothing else", () => {
+    let replayed = 0;
+    const editor = createWeightEditor(() => {
+      replayed++;
+    });
+    editor.select(connection);
+
+    assert.equal(editor.handleKey("ArrowUp", target), true);
+    const edited = editor.edited;
+    assert.ok(edited);
+    assert.ok(edited[index] > recorded[index], "the picked weight goes up");
+    for (const [at, value] of edited.entries()) {
+      if (at !== index) {
+        assert.equal(value, recorded[at], `weight ${String(at)} moved as well`);
+      }
+    }
+    assert.equal(replayed, 1, "and the run is played again so you can see it");
+  });
+
+  test("Backspace puts the recording back", () => {
+    const editor = createWeightEditor(() => undefined);
+    editor.select(connection);
+    editor.handleKey("ArrowDown", target);
+    assert.ok(editor.edited);
+
+    assert.equal(editor.handleKey("Backspace", target), true);
+    assert.equal(editor.edited, null);
+  });
+
+  test("a key it has no business with is left alone", () => {
+    const editor = createWeightEditor(() => undefined);
+    editor.select(connection);
+    assert.equal(editor.handleKey("q", target), false);
+  });
+
+  test("it names the weight it is on, and where it sits", () => {
+    const editor = createWeightEditor(() => undefined);
+    editor.select(connection);
+    const described = editor.describe(target, recorded);
+    assert.ok(described !== null);
+    assert.ok(described.includes(`Gewicht ${String(index)}`));
+    assert.ok(described.includes("laag 1"), "and which layer it is in, counted from one");
   });
 });

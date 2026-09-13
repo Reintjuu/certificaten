@@ -1,7 +1,9 @@
 // The MAP-Elites archive as a grid: one cell per kind of behaviour, holding
 // the best agent that behaved that way. Reading it is the point of the method,
 // so it gets a picture rather than a number.
+import { CANVAS_H, CANVAS_W } from "../engine";
 import { COLORS as GAME_COLORS } from "../render";
+import { drawTextCentered } from "../font";
 import { HEIGHT_BINS, REACH_BINS, type Archive } from "./map-elites";
 
 const LEFT_MARGIN = 90;
@@ -88,4 +90,33 @@ export function cellAt(ctx: CanvasRenderingContext2D, x: number, y: number): num
     return null;
   }
   return row * REACH_BINS + column;
+}
+
+/**
+ * The whole screen around the grid, which the console used to assemble
+ * itself. Drawn here with the grid it belongs to, and the caption comes back
+ * rather than being written into the page from a drawing function.
+ */
+export function drawArchiveScreen(
+  ctx: CanvasRenderingContext2D,
+  gridCtx: CanvasRenderingContext2D | null,
+  scene: { archive: Archive; levelIndex: number; prompt: boolean }
+): string {
+  ctx.fillStyle = GAME_COLORS.nightSky;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  drawTextCentered(ctx, "ARCHIEF", CANVAS_W / 2, 44, 1, GAME_COLORS.highlight);
+  drawTextCentered(ctx, `LEVEL ${String(scene.levelIndex + 1)}`, CANVAS_W / 2, 96, 1, GAME_COLORS.text);
+  drawTextCentered(ctx, "KLIK EEN VAKJE", CANVAS_W / 2, 140, 1, GAME_COLORS.dimText);
+  if (scene.prompt) {
+    drawTextCentered(ctx, "ESCAPE VOOR HET MENU", CANVAS_W / 2, 200, 1, GAME_COLORS.faintText);
+  }
+
+  if (gridCtx !== null) {
+    drawArchive(gridCtx, scene.archive);
+  }
+
+  return (
+    "Elk vakje is een soort gedrag: hoe ver hij kwam tegen hoe hoog hij kwam, met de beste agent " +
+    "die zich zo gedroeg. Klik er een aan om hem te zien spelen."
+  );
 }

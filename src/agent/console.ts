@@ -5,35 +5,21 @@
 // It never touches the game's own loop; it borrows the canvas, drives the same
 // pure engine and draws with the same renderer.
 import trainingHistory from "./training-history.json";
-import { CANVAS_H, CANVAS_W, LEVELS, type Input } from "../engine";
-import { COLORS, drawFrameRate } from "../render";
-import { drawTextCentered } from "../font";
+import { LEVELS, type Input } from "../engine";
+import { drawFrameRate } from "../render";
 import { Menu } from "../menu";
 import { createFrameRate } from "../fps";
 import { drawFitnessChart } from "./chart";
-import { finishRun } from "./run";
-import { checkHistory, createTrainer, type LevelHistory, type TrainingHistory } from "./evolution";
-import {
-  DEFAULT_ARCHITECTURE,
-  features,
-  forward,
-  genomeSize,
-  layoutOf,
-  chosenOutputs,
-  outputsOf,
-  policyFor,
-  roundWeight,
-  type Architecture,
-  type Genome,
-} from "./policy";
-import { connectionAt, drawNetwork, drawWeightMap, type Connection } from "./network-view";
-import { createReinforceTrainer } from "./reinforce";
-import { createCloneTrainerUsing } from "./clone";
-import { createCmaesTrainer } from "./cmaes";
-import { createMapElitesTrainer, type Archive } from "./map-elites";
-import { cellAt, drawArchive } from "./archive-view";
-import { DQN_ARCHITECTURE, createDqnTrainer } from "./dqn";
-import { NEAT_ARCHITECTURE, createNeatTrainer, isNeat, neatPolicy } from "./neat-trainer";
+import { checkHistory, type LevelHistory, type TrainingHistory } from "./evolution";
+import { features, forward, chosenOutputs, outputsOf, type Genome } from "./policy";
+import { connectionAt, drawNetwork } from "./network-view";
+import { createWeightEditor, type EditTarget } from "./weight-editing";
+import { type Archive } from "./map-elites";
+import { isMethod, trainingMethods, type Method } from "./methods";
+import { cellAt, drawArchiveScreen as drawArchiveScreenView } from "./archive-view";
+import { CAPTIONS, buildChrome, type Chrome } from "./console-chrome";
+import { drawWeightsScreen } from "./weights-view";
+import { isNeat, neatPolicy } from "./neat-trainer";
 import { decodeGenome } from "./neat";
 import { drawNeatNetwork } from "./neat-view";
 import { startTrainingSession, type TrainingSession } from "./training-view";
@@ -57,23 +43,17 @@ const FRAME_RATE_KEYS = new Set(["f", "F"]);
 
 let canvas!: HTMLCanvasElement;
 let ctx!: CanvasRenderingContext2D;
-let chartCtx!: CanvasRenderingContext2D;
-let generationsEl!: HTMLDivElement;
-let statusEl!: HTMLDivElement;
+let chrome: Chrome | null = null;
 let leaveConsole: ((intent: ConsoleExit) => void) | null = null;
 let running = false;
 
 const frameRate = createFrameRate();
 let showFrameRate = false;
 
-let networkCtx: CanvasRenderingContext2D | null = null;
-let networkCanvas: HTMLCanvasElement | null = null;
-let networkCaption: HTMLElement | null = null;
-let selected: Connection | null = null;
-/** A hand-edited copy of the best genome, replayed instead of the recorded one. */
-let editedGenome: Genome | null = null;
-/** Frames the recorded genome took, to compare an edit against. */
-let recordedFrames: number | null = null;
+/** Picking a connection apart, which only the replay screen offers. */
+const editor = createWeightEditor(() => {
+  startReplay(levelIndex, levelHistory().bestGeneration, false);
+});
 
 let screen: Screen = "menu";
 let levelIndex = 0;
@@ -89,15 +69,15 @@ let training: TrainingSession | null = null;
  */
 const archives: (Archive | null)[] = LEVELS.map(() => null);
 
-function levelHistory(): LevelHistory {
-  return history.levels[levelIndex];
+/** The one line of text under the picture, which every screen writes to. */
+function say(text: string): void {
+  if (chrome !== null) {
+    chrome.status.textContent = text;
+  }
 }
 
-/** Edits belong to one genome, so moving to another one drops them. */
-function clearEdits(): void {
-  editedGenome = null;
-  selected = null;
-  recordedFrames = null;
+function levelHistory(): LevelHistory {
+  return history.levels[levelIndex];
 }
 
 /**
@@ -129,7 +109,7 @@ function routeToBeat(levelIndex: number): { x: number; y: number }[] {
 
 function startReplay(level: number, generation: number, all: boolean): void {
   screen = "replay";
-  setNetworkCaption(NETWORK_CAPTION);
+  setNetworkCaption(CAPTIONS.network);
   levelIndex = level;
   generationIndex = generation;
   showAllGenerations = all;
@@ -143,11 +123,11 @@ function startReplay(level: number, generation: number, all: boolean): void {
     leadGeneration: all ? levelHistory().bestGeneration : generation,
     showAll: all,
     genomeFor: (record, index) =>
-      index === levelHistory().bestGeneration ? (editedGenome ?? record.genome) : record.genome,
+      index === levelHistory().bestGeneration ? (editor.edited ?? record.genome) : record.genome,
   });
 
   renderGenerationButtons();
-  drawFitnessChart(chartCtx, levelHistory().generations, levelHistory().bestGeneration);
+  drawFitnessChart(chrome!.chartCtx, levelHistory().generations, levelHistory().bestGeneration);
 }
 
 /**
@@ -159,64 +139,7 @@ function teacherFor(level: number): Genome {
   return recorded.generations[recorded.bestGeneration].genome;
 }
 
-/**
- * `label` names the method in the dropdown, `short` fits the training screen's
- * header, where the full name ran over the progress bar.
- */
-/**
- * `architectureFor` lets a method choose its own output layer: a value head
- * has one output per button combination where a control head has three.
- */
-const controlHead = (hidden: readonly number[]): Architecture => ({ ...DEFAULT_ARCHITECTURE, hidden });
-const valueHead = (hidden: readonly number[]): Architecture => ({ ...DQN_ARCHITECTURE, hidden });
-
-const TRAINING_METHODS = {
-  evolution: {
-    label: "evolutie",
-    short: "EVOLUTIE",
-    create: createTrainer,
-    architectureFor: controlHead,
-  },
-  gradient: {
-    label: "gradient (REINFORCE)",
-    short: "GRADIENT",
-    create: createReinforceTrainer,
-    architectureFor: controlHead,
-  },
-  clone: {
-    label: "nadoen (behaviour cloning)",
-    short: "NADOEN",
-    create: createCloneTrainerUsing(teacherFor),
-    architectureFor: controlHead,
-  },
-  archive: {
-    label: "MAP-Elites (archief)",
-    short: "MAP-ELITES",
-    create: createMapElitesTrainer,
-    architectureFor: controlHead,
-  },
-  cmaes: {
-    label: "CMA-ES",
-    short: "CMA-ES",
-    create: createCmaesTrainer,
-    architectureFor: controlHead,
-  },
-  qlearning: {
-    label: "Q-learning (DQN)",
-    short: "DQN",
-    create: createDqnTrainer,
-    architectureFor: valueHead,
-  },
-  neat: {
-    label: "NEAT (vorm groeit mee)",
-    short: "NEAT",
-    create: createNeatTrainer,
-    // NEAT decides its own hidden nodes, so the setting does not apply.
-    architectureFor: (): Architecture => NEAT_ARCHITECTURE,
-  },
-} as const;
-
-type Method = keyof typeof TRAINING_METHODS;
+const TRAINING_METHODS = trainingMethods(teacherFor);
 
 let method: Method = "evolution";
 
@@ -228,18 +151,17 @@ function startTraining(
   method = chosen;
   const { create, short, architectureFor } = TRAINING_METHODS[chosen];
   training = startTrainingSession(create, short, architectureFor(hidden));
-  generationsEl.replaceChildren();
+  chrome?.generations.replaceChildren();
 }
 
 function startArchive(): void {
   if (archives[levelIndex] === null) {
-    statusEl.textContent =
-      "Er is nog geen archief. Train eerst met MAP-Elites; die bewaart per soort gedrag de beste agent.";
+    say("Er is nog geen archief. Train eerst met MAP-Elites; die bewaart per soort gedrag de beste agent.");
     return;
   }
   screen = "archive";
-  generationsEl.replaceChildren();
-  setNetworkCaption(ARCHIVE_CAPTION);
+  chrome?.generations.replaceChildren();
+  setNetworkCaption(CAPTIONS.archive);
 }
 
 function drawArchiveScreen(): void {
@@ -248,62 +170,31 @@ function drawArchiveScreen(): void {
     toMenu();
     return;
   }
-
-  ctx.fillStyle = COLORS.nightSky;
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  drawTextCentered(ctx, "ARCHIEF", CANVAS_W / 2, 44, 1, COLORS.highlight);
-  drawTextCentered(ctx, `LEVEL ${levelIndex + 1}`, CANVAS_W / 2, 96, 1, COLORS.text);
-  drawTextCentered(ctx, "KLIK EEN VAKJE", CANVAS_W / 2, 140, 1, COLORS.dimText);
-  if (blinkTimer < BLINK_HALF) {
-    drawTextCentered(ctx, "ESCAPE VOOR HET MENU", CANVAS_W / 2, 200, 1, COLORS.faintText);
-  }
-
-  if (networkCtx !== null) {
-    drawArchive(networkCtx, grid);
-  }
-  statusEl.textContent =
-    "Elk vakje is een soort gedrag: hoe ver hij kwam tegen hoe hoog hij kwam, met de beste agent " +
-    "die zich zo gedroeg. Klik er een aan om hem te zien spelen.";
+  say(
+    drawArchiveScreenView(ctx, chrome?.networkCtx ?? null, {
+      archive: grid,
+      levelIndex,
+      prompt: blinkTimer < BLINK_HALF,
+    })
+  );
 }
 
 function startWeightMap(): void {
   screen = "weights";
-  generationsEl.replaceChildren();
-  setNetworkCaption(WEIGHTS_CAPTION);
+  chrome?.generations.replaceChildren();
+  setNetworkCaption(CAPTIONS.weights);
 }
 
-/**
- * The answer to "what is actually saved": one cell per stored number, laid
- * out the way the flat genome is packed.
- */
 function drawWeights(): void {
-  const genome = shippedGenome();
-  const count = genomeSize(history.architecture);
-  const shape = [
-    history.architecture.inputs,
-    ...history.architecture.hidden,
-    history.architecture.outputs,
-  ].join(" x ");
-
-  ctx.fillStyle = COLORS.nightSky;
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  drawTextCentered(ctx, "OPGESLAGEN GEWICHTEN", CANVAS_W / 2, 40, 1, COLORS.highlight);
-  drawTextCentered(ctx, `LEVEL ${levelIndex + 1}`, CANVAS_W / 2, 90, 1, COLORS.text);
-  drawTextCentered(ctx, `${count} GETALLEN`, CANVAS_W / 2, 130, 1, COLORS.text);
-  drawTextCentered(ctx, shape.toUpperCase(), CANVAS_W / 2, 170, 1, COLORS.dimText);
-  if (blinkTimer < BLINK_HALF) {
-    drawTextCentered(ctx, "ESCAPE VOOR HET MENU", CANVAS_W / 2, 220, 1, COLORS.faintText);
-  }
-
-  if (networkCtx !== null) {
-    drawWeightMap(networkCtx, genome, history.architecture);
-  }
-  statusEl.textContent =
-    `Elk vakje is een van de ${String(count)} getallen die per generatie worden bewaard: ` +
-    `een rij per knoop, een kolom per inkomende waarde, de bias als laatste kolom. ` +
-    `Geel is positief, blauw negatief. Dit is generatie ` +
-    `${String(levelHistory().generations[levelHistory().bestGeneration].generation)} van level ` +
-    `${String(levelIndex + 1)}.`;
+  say(
+    drawWeightsScreen(ctx, chrome?.networkCtx ?? null, {
+      genome: shippedGenome(),
+      architecture: history.architecture,
+      levelIndex,
+      generation: levelHistory().generations[levelHistory().bestGeneration].generation,
+      prompt: blinkTimer < BLINK_HALF,
+    })
+  );
 }
 
 function downloadHistory(): void {
@@ -320,7 +211,7 @@ const menu = new Menu("AI CONSOLE", [
     label: "BEKIJK BESTE RUN",
     hint: "BESTE GENERATIE, LEVEL 1",
     run: () => {
-      clearEdits();
+      editor.clear();
       startReplay(0, history.levels[0].bestGeneration, false);
     },
   },
@@ -328,7 +219,7 @@ const menu = new Menu("AI CONSOLE", [
     label: "ALLE GENERATIES",
     hint: "ALLEMAAL TEGELIJK MET PAD",
     run: () => {
-      clearEdits();
+      editor.clear();
       startReplay(0, history.levels[0].bestGeneration, true);
     },
   },
@@ -357,17 +248,17 @@ const menu = new Menu("AI CONSOLE", [
 
 function renderGenerationButtons(): void {
   if (screen !== "replay") {
-    generationsEl.replaceChildren();
+    chrome?.generations.replaceChildren();
     return;
   }
   const { generations, bestGeneration } = levelHistory();
-  generationsEl.replaceChildren(
+  chrome?.generations.replaceChildren(
     ...LEVELS.map((_, index) => {
       const button = document.createElement("button");
       button.textContent = `Level ${index + 1}`;
       button.className = index === levelIndex ? "active" : "";
       button.onclick = () => {
-        clearEdits();
+        editor.clear();
         startReplay(index, history.levels[index].bestGeneration, showAllGenerations);
       };
       return button;
@@ -378,7 +269,7 @@ function renderGenerationButtons(): void {
       button.title = `beste fitness ${record.bestFitness.toFixed(1)}, ${record.solved} haalden het certificaat`;
       button.className = !showAllGenerations && index === generationIndex ? "active" : "";
       button.onclick = () => {
-        clearEdits();
+        editor.clear();
         startReplay(levelIndex, index, false);
       };
       return button;
@@ -396,6 +287,7 @@ function buttonsOf(input: Input): boolean[] {
 }
 
 function drawNetworkFor(ghost: Ghost): void {
+  const networkCtx = chrome?.networkCtx ?? null;
   if (networkCtx === null) {
     return;
   }
@@ -417,7 +309,7 @@ function drawNetworkFor(ghost: Ghost): void {
     architecture: history.architecture,
     activations,
     pressed: chosenOutputs(outputsOf(activations), history.architecture),
-    selected,
+    selected: editor.selected,
   });
 }
 
@@ -428,10 +320,12 @@ function drawReplay(): void {
   replay.draw(ctx);
   drawNetworkFor(replay.lead);
 
-  statusEl.textContent = replay.showAll
-    ? `Level ${String(levelIndex + 1)}, alle ${String(replay.ghosts.length)} generaties tegelijk ` +
-      `(blauw = vroegste, geel = laatste). ${String(replay.reached)} haalden het certificaat.`
-    : replayStatus(replay.lead);
+  say(
+    replay.showAll
+      ? `Level ${String(levelIndex + 1)}, alle ${String(replay.ghosts.length)} generaties tegelijk ` +
+          `(blauw = vroegste, geel = laatste). ${String(replay.reached)} haalden het certificaat.`
+      : replayStatus(replay.lead)
+  );
 }
 
 function advanceReplay(): void {
@@ -446,7 +340,7 @@ function hasArchive(trainer: unknown): trainer is { archive: Archive } {
 }
 
 function finishTraining(session: TrainingSession): void {
-  clearEdits();
+  editor.clear();
   session.trainers.forEach((trainer, level) => {
     archives[level] = hasArchive(trainer) ? trainer.archive : null;
   });
@@ -473,28 +367,18 @@ function drawTraining(): void {
     return;
   }
   training.draw(ctx, blinkTimer < BLINK_HALF);
-  drawFitnessChart(chartCtx, training.currentTrainer.generations, 0);
-  statusEl.textContent = training.status();
+  drawFitnessChart(chrome!.chartCtx, training.currentTrainer.generations, 0);
+  say(training.status());
 }
 
 function replayStatus(lead: Ghost): string {
-  if (selected === null) {
-    return isNeat(history.architecture)
-      ? "Dit netwerk is gegroeid: NEAT begon zonder verborgen knopen en heeft deze er zelf bij gemaakt."
-      : "Klik op een verbinding in het netwerk om het gewicht te zien en aan te passen.";
+  const described = editor.describe(editTarget(), lead.genome);
+  if (described !== null) {
+    return described;
   }
-  const layer = layoutOf(history.architecture)[selected.layer];
-  const index = layer.weight(selected.to, selected.from);
-  const value = lead.genome[index].toFixed(4);
-  const original = shippedGenome()[index].toFixed(4);
-  const comparison =
-    recordedFrames === null ? "" : ` De opname deed er ${String(recordedFrames)} frames over.`;
-  return (
-    `Gewicht ${String(index)} van ${String(genomeSize(history.architecture))}: ` +
-    `laag ${String(selected.layer + 1)}, van knoop ${String(selected.from + 1)} naar ${String(selected.to + 1)}. ` +
-    `Nu ${value}, opgenomen ${original}. Pijltjes omhoog en omlaag verschuiven het, Backspace zet het terug.` +
-    comparison
-  );
+  return isNeat(history.architecture)
+    ? "Dit netwerk is gegroeid: NEAT begon zonder verborgen knopen en heeft deze er zelf bij gemaakt."
+    : "Klik op een verbinding in het netwerk om het gewicht te zien en aan te passen.";
 }
 
 /** The recorded best genome for the level on screen, edits aside. */
@@ -503,10 +387,15 @@ function shippedGenome(): Genome {
   return level.generations[level.bestGeneration].genome;
 }
 
+/** What an edit on this screen is an edit of. */
+function editTarget(): EditTarget {
+  return { architecture: history.architecture, recorded: shippedGenome(), levelIndex };
+}
+
 function toMenu(): void {
   screen = "menu";
-  generationsEl.replaceChildren();
-  statusEl.textContent = "Kies met de pijltjes en Enter, of klik.";
+  chrome?.generations.replaceChildren();
+  say("Kies met de pijltjes en Enter, of klik.");
 }
 const CONSOLE_KEYS = new Set([
   ...MENU_UP_KEYS,
@@ -536,17 +425,6 @@ function handleGlobalKey(key: string): boolean {
   return true;
 }
 
-/** Adjusting the connection picked in the network. */
-function handleWeightKey(key: string): void {
-  if (key === "ArrowUp") {
-    nudgeSelectedWeight(1);
-  } else if (key === "ArrowDown") {
-    nudgeSelectedWeight(-1);
-  } else if (key === "Backspace") {
-    resetEditedWeights();
-  }
-}
-
 function handleMenuKey(key: string): void {
   if (MENU_UP_KEYS.has(key)) {
     menu.moveBy(-1);
@@ -570,8 +448,8 @@ function onKeyDown(event: KeyboardEvent): void {
   if (handleGlobalKey(event.key)) {
     return;
   }
-  if (screen === "replay" && selected !== null) {
-    handleWeightKey(event.key);
+  if (screen === "replay" && editor.selected !== null) {
+    editor.handleKey(event.key, editTarget());
   } else if (screen === "menu") {
     handleMenuKey(event.key);
   }
@@ -625,123 +503,16 @@ function tick(): void {
   requestAnimationFrame(tick);
 }
 
-/** The chrome the console needs beyond the canvas, built when it opens. */
-function buildCanvas(id: string, width: number, height: number): HTMLCanvasElement {
-  const element = document.createElement("canvas");
-  element.width = width;
-  element.height = height;
-  element.id = id;
-  return element;
-}
-
-const NETWORK_CAPTION = "Het netwerk: links wat het ziet, rechts wat het besluit.";
-const WEIGHTS_CAPTION = "De opgeslagen gewichten, per laag: een rij per knoop, de bias als laatste kolom.";
-const ARCHIVE_CAPTION = "Het archief: een vakje per soort gedrag, met de beste agent die zich zo gedroeg.";
-
 function setNetworkCaption(text: string): void {
-  if (networkCaption !== null) {
-    networkCaption.textContent = text;
-  }
+  chrome?.setCaption(text);
 }
 
-function buildCaption(text: string): HTMLElement {
-  const caption = document.createElement("h2");
-  caption.textContent = text;
-  return caption;
-}
-
-/** Lets you retrain with a different shape without leaving the page. */
-function buildArchitectureRow(): HTMLElement {
-  const row = document.createElement("div");
-  row.id = "architecture";
-
-  const label = document.createElement("label");
-  label.textContent = "verborgen lagen ";
-  const input = document.createElement("input");
-  input.id = "hidden-layers";
-  input.value = history.architecture.hidden.join(",");
-  input.size = 10;
-  label.append(input);
-
-  const methodLabel = document.createElement("label");
-  methodLabel.textContent = " leren met ";
-  const methodSelect = document.createElement("select");
-  methodSelect.id = "method";
-  for (const [value, entry] of Object.entries(TRAINING_METHODS)) {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = entry.label;
-    methodSelect.append(option);
-  }
-  methodLabel.append(methodSelect);
-
-  const train = document.createElement("button");
-  train.textContent = "train met deze vorm";
-  train.onclick = () => {
-    const hidden = parseHiddenLayers(input.value);
-    if (hidden === null) {
-      statusEl.textContent = `"${input.value}" is geen lijst positieve gehele getallen, bijvoorbeeld 8 of 12,6.`;
-      return;
-    }
-    startTraining(hidden, methodSelect.value as Method);
-  };
-
-  row.append(label, methodLabel, train);
-  return row;
-}
-
-/** "8" or "12,6". Anything else is refused rather than half understood. */
-export function parseHiddenLayers(text: string): number[] | null {
-  const trimmed = text.trim();
-  if (trimmed === "") {
-    return [];
-  }
-  const parts = trimmed.split(",").map((part) => Number(part.trim()));
-  const valid = parts.every((size) => Number.isInteger(size) && size > 0 && size <= 64);
-  return valid ? parts : null;
-}
-
-function buildChrome(container: HTMLElement): void {
-  statusEl = document.createElement("div");
-  statusEl.id = "status";
-
-  const chartCanvas = buildCanvas("chart", 960, 180);
-  chartCtx = chartCanvas.getContext("2d")!;
-
-  networkCanvas = buildCanvas("network", 960, 380);
-  networkCtx = networkCanvas.getContext("2d");
-  networkCanvas.onclick = (event) => {
-    onNetworkClick(event);
-  };
-
-  generationsEl = document.createElement("div");
-  generationsEl.id = "generations";
-
-  networkCaption = buildCaption(NETWORK_CAPTION);
-
-  // The training controls sit directly under the game rather than at the very
-  // bottom of the page, where the method dropdown was easy to miss entirely.
-  container.replaceChildren(
-    statusEl,
-    buildArchitectureRow(),
-    buildCaption("Fitness per generatie (\u2605 = beste). Escape brengt je terug."),
-    chartCanvas,
-    generationsEl,
-    networkCaption,
-    networkCanvas
-  );
-  container.hidden = false;
-}
-
-/** Canvas coordinates from a click, whatever the element is scaled to. */
-function onNetworkClick(event: MouseEvent): void {
-  if (networkCanvas === null || networkCtx === null) {
+/** A click in the network picture, which two screens make something of. */
+function onNetworkClick(x: number, y: number): void {
+  const networkCtx = chrome?.networkCtx ?? null;
+  if (networkCtx === null) {
     return;
   }
-  const bounds = networkCanvas.getBoundingClientRect();
-  const x = (event.clientX - bounds.left) * (networkCanvas.width / bounds.width);
-  const y = (event.clientY - bounds.top) * (networkCanvas.height / bounds.height);
-
   if (screen === "archive") {
     playElite(cellAt(networkCtx, x, y));
     return;
@@ -749,7 +520,7 @@ function onNetworkClick(event: MouseEvent): void {
   // A grown network's connections are not at layer coordinates, so there is
   // nothing to pick at: NEAT draws its graph and leaves the weights alone.
   if (screen === "replay" && !showAllGenerations && !isNeat(history.architecture)) {
-    selected = connectionAt(networkCtx, history.architecture, x, y);
+    editor.select(connectionAt(networkCtx, history.architecture, x, y));
   }
 }
 
@@ -758,39 +529,10 @@ function playElite(cell: number | null): void {
   const grid = archives[levelIndex];
   const elite = cell === null || grid === null ? null : grid[cell];
   if (elite === null) {
-    statusEl.textContent = "Dat vakje is leeg: geen enkele agent gedroeg zich zo.";
+    say("Dat vakje is leeg: geen enkele agent gedroeg zich zo.");
     return;
   }
-  editedGenome = elite.genome;
-  selected = null;
-  recordedFrames = null;
-  startReplay(levelIndex, levelHistory().bestGeneration, false);
-}
-
-const WEIGHT_STEP = 0.05;
-
-/** Nudges the selected weight and replays the run with it straight away. */
-function nudgeSelectedWeight(direction: number): void {
-  if (selected === null) {
-    return;
-  }
-  const recorded = shippedGenome();
-  recordedFrames ??= finishRun(
-    recorded,
-    levelIndex,
-    history.architecture,
-    undefined,
-    policyFor(history.architecture)
-  ).frames;
-  const index = layoutOf(history.architecture)[selected.layer].weight(selected.to, selected.from);
-  const genome = [...(editedGenome ?? recorded)];
-  genome[index] = roundWeight(genome[index] + direction * WEIGHT_STEP);
-  editedGenome = genome;
-  startReplay(levelIndex, levelHistory().bestGeneration, false);
-}
-
-function resetEditedWeights(): void {
-  editedGenome = null;
+  editor.adopt(elite.genome);
   startReplay(levelIndex, levelHistory().bestGeneration, false);
 }
 
@@ -815,7 +557,22 @@ export function openConsole(options: ConsoleOptions): void {
   canvas = options.canvas;
   ctx = canvas.getContext("2d")!;
   ctx.imageSmoothingEnabled = false;
-  buildChrome(options.container);
+  chrome = buildChrome({
+    container: options.container,
+    methods: TRAINING_METHODS,
+    hidden: history.architecture.hidden,
+    onNetworkClick,
+    onTrain: (hidden, chosen) => {
+      // The dropdown is built from the same list, so this only fails if the
+      // two ever drift apart.
+      if (isMethod(chosen, TRAINING_METHODS)) {
+        startTraining(hidden, chosen);
+      }
+    },
+    onBadLayers: (text) => {
+      say(`"${text}" is geen lijst positieve gehele getallen, bijvoorbeeld 8 of 12,6.`);
+    },
+  });
 
   const listeners = new AbortController();
   const { signal } = listeners;
