@@ -32,6 +32,7 @@ import {
 } from "./policy";
 import { connectionAt, drawNetwork, drawWeightMap, type Connection } from "./network-view";
 import { createReinforceTrainer } from "./reinforce";
+import { createCloneTrainerUsing } from "./clone";
 import { startTrainingSession, type TrainingSession } from "./training-view";
 
 type Screen = "menu" | "replay" | "training" | "weights";
@@ -140,9 +141,27 @@ function startReplay(level: number, generation: number, all: boolean): void {
   drawFitnessChart(chartCtx, generations, levelHistory().bestGeneration);
 }
 
+/**
+ * The teacher for behaviour cloning is whatever the console currently holds as
+ * the best agent for that level, so cloning after a retrain copies the new one.
+ */
+function teacherFor(level: number): Genome {
+  const recorded = history.levels[level];
+  return recorded.generations[recorded.bestGeneration].genome;
+}
+
+/**
+ * `label` names the method in the dropdown, `short` fits the training screen's
+ * header, where the full name ran over the progress bar.
+ */
 const TRAINING_METHODS = {
-  evolution: { label: "evolutie", create: createTrainer },
-  gradient: { label: "gradient (REINFORCE)", create: createReinforceTrainer },
+  evolution: { label: "evolutie", short: "EVOLUTIE", create: createTrainer },
+  gradient: { label: "gradient (REINFORCE)", short: "GRADIENT", create: createReinforceTrainer },
+  clone: {
+    label: "nadoen (behaviour cloning)",
+    short: "NADOEN",
+    create: createCloneTrainerUsing(teacherFor),
+  },
 } as const;
 
 type Method = keyof typeof TRAINING_METHODS;
@@ -152,8 +171,8 @@ let method: Method = "evolution";
 function startTraining(architecture: Architecture = history.architecture, chosen: Method = method): void {
   screen = "training";
   method = chosen;
-  const { create, label } = TRAINING_METHODS[chosen];
-  training = startTrainingSession(create, label.toUpperCase(), architecture);
+  const { create, short } = TRAINING_METHODS[chosen];
+  training = startTrainingSession(create, short, architecture);
   generationsEl.replaceChildren();
 }
 

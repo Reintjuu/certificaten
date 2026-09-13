@@ -101,7 +101,13 @@ Trainen gebeurt volledig headless en zo snel als de CPU kan, niet op speelsnelhe
 
 In de browser scoort de trainer **één kandidaat per keer** in plaats van een hele generatie, met een budget van 10ms per frame. Een generatie is 80 runs en kost een paar honderd milliseconden; die tussen twee paints proppen liet de pagina bevriezen en de generatieteller stilstaan. Nu loopt er een voortgangsbalk binnen de generatie mee.
 
-### Twee manieren van leren, en waarom de ene wint
+### Drie manieren van leren, en wat ze van elkaar verraden
+
+Er zit ook **behaviour cloning** in (`src/agent/clone.ts`), en dat is het controle-experiment voor de hele AI-kant. Neem de beste agent die er is, schrijf op wat hij in elke toestand deed, en leer een vers netwerk dat na te doen met gewone supervised gradiëntafdaling. De leraar is een netwerk van precies dezelfde vorm, dus de leerling kán hem in principe exact evenaren.
+
+Dat lukt ook: na 2000 passes over de lessen haalt de leerling op alle drie de levels **exact de score van zijn leraar** (3296, 3258, 3230). Daarmee is zwart op wit dat de architectuur en de features de policy gradient nooit in de weg zaten; het zat volledig in het leersignaal. Een test eist dat de leerling de leraar precies evenaart en niet slechts benadert.
+
+Een detail dat het waard is om te noemen: met 100 passes bleef de fout op 0,08 steken en speelde de leerling geen enkel level uit. Dat is geen toeval maar rekenwerk: een knop zit achter een drempel van 0,2, en een gemiddelde fout van die orde draait precies op de verkeerde momenten een druk om. Pas als de fout een orde kleiner is dan de drempel volgt de leerling het pad van de leraar.
 
 Naast de evolutie zit er een **policy gradient** (REINFORCE) in `src/agent/reinforce.ts`: hetzelfde netwerk, dezelfde inputs, hetzelfde spel, maar in plaats van hele runs scoren en de winnaars kruisen duwt hij elk gewicht in de richting die de goede frames waarschijnlijker maakte. Kiesbaar onder de grafiek in de console.
 

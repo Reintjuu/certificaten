@@ -14,13 +14,12 @@ import {
   forwardPass,
   genomeSize,
   inputFromOutputs,
-  layerSizes,
-  layoutOf,
   randomGenome,
   roundWeight,
   type Architecture,
   type Genome,
 } from "./policy";
+import { backpropagate, outputLayer } from "./backprop";
 import { createRandom, type Random } from "./random";
 import {
   PATH_SAMPLE_EVERY,
@@ -136,41 +135,13 @@ export function accumulate(
   advantage: number,
   architecture: Architecture
 ): void {
-  const layers = layoutOf(architecture);
-  const sizes = layerSizes(architecture);
-
   // d log pi / d sum for a Gaussian around tanh(sum): how far the sample
   // landed from the mean, over the variance, through tanh's own derivative.
-  const means = step.activations[sizes.length - 1];
-  let delta = means.map(
+  const means = step.activations[outputLayer(architecture)];
+  const delta = means.map(
     (mean, i) => ((step.sampled[i] - mean) / (EXPLORATION * EXPLORATION)) * (1 - mean * mean) * advantage
   );
-
-  for (let layer = layers.length - 1; layer >= 0; layer--) {
-    const wiring = layers[layer];
-    const previous = step.activations[layer];
-
-    for (let to = 0; to < wiring.to; to++) {
-      gradient[wiring.bias(to)] += delta[to];
-      for (let from = 0; from < wiring.from; from++) {
-        gradient[wiring.weight(to, from)] += delta[to] * previous[from];
-      }
-    }
-
-    if (layer === 0) {
-      break;
-    }
-    const back = new Array<number>(wiring.from);
-    for (let from = 0; from < wiring.from; from++) {
-      let sum = 0;
-      for (let to = 0; to < wiring.to; to++) {
-        sum += delta[to] * genome[wiring.weight(to, from)];
-      }
-      // previous[from] is tanh of its own sum, so its derivative is 1 - a^2.
-      back[from] = sum * (1 - previous[from] * previous[from]);
-    }
-    delta = back;
-  }
+  backpropagate(gradient, genome, step.activations, delta, architecture);
 }
 
 export function createReinforceTrainer(levelIndex: number, options: TrainerOptions = {}): Trainer {

@@ -10,10 +10,10 @@ import {
 } from "../src/agent/policy";
 import { EXPLORATION, accumulate, createReinforceTrainer, type Step } from "../src/agent/reinforce";
 import { createTrainer } from "../src/agent/evolution";
-import { fitnessOf } from "../src/agent/run";
+import { RunOutcome, finishRun, fitnessOf } from "../src/agent/run";
 import { createRandom } from "../src/agent/random";
 import { DEFAULT_ARCHITECTURE, GENOME_SIZE } from "../src/agent/policy";
-import { finishRun } from "../src/agent/run";
+import { createCloneTrainerUsing } from "../src/agent/clone";
 import { readFileSync } from "node:fs";
 import type { TrainingHistory } from "../src/agent/evolution";
 
@@ -145,4 +145,35 @@ describe("what a recorded generation claims", () => {
       }
     });
   }
+});
+
+describe("learning by copying", () => {
+  test("a student reaches the teacher's own score", () => {
+    // The control experiment for the whole AI side. The teacher is a network
+    // of exactly the same shape, so if plain supervised descent reproduces its
+    // run then the architecture and the features were never what held the
+    // policy gradient back: the learning signal was.
+    const history = JSON.parse(
+      readFileSync(new URL("../src/agent/training-history.json", import.meta.url), "utf8")
+    ) as TrainingHistory;
+    const teacherFor = (level: number): number[] => {
+      const recorded = history.levels[level];
+      return recorded.generations[recorded.bestGeneration].genome;
+    };
+
+    const teacher = finishRun(teacherFor(0), 0, DEFAULT_ARCHITECTURE);
+    assert.equal(teacher.outcome, RunOutcome.Solved, "the teacher has to be worth copying");
+
+    const trainer = createCloneTrainerUsing(teacherFor)(0);
+    let best = -Infinity;
+    while (!trainer.done && best < fitnessOf(teacher)) {
+      best = Math.max(best, trainer.runGeneration().bestFitness);
+    }
+
+    assert.equal(
+      best,
+      fitnessOf(teacher),
+      "the student should reproduce the teacher's run exactly, not merely approach it"
+    );
+  });
 });
