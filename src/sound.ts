@@ -54,6 +54,16 @@ const EFFECTS: Record<SoundEvent, Note[]> = {
     { pitch: 262, length: 0.38, voice: "triangle", gain: 0.5, at: 0.3 },
   ],
   [SoundEvent.Talk]: [{ pitch: 880, length: 0.03, voice: "pulse", duty: "eighth", gain: 0.3 }],
+  // The coin blip: two quick steps up, which is what a NES coin always was.
+  [SoundEvent.Stamp]: [
+    { pitch: 988, length: 0.04, voice: "pulse", duty: "quarter" },
+    { pitch: 1319, length: 0.32, voice: "pulse", duty: "quarter", at: 0.04 },
+  ],
+  [SoundEvent.Bump]: [{ pitch: [200, 130], length: 0.08, voice: "pulse", duty: "half", gain: 0.6 }],
+  [SoundEvent.Break]: [
+    { pitch: 0, length: 0.2, voice: "noise", gain: 0.8 },
+    { pitch: [400, 90], length: 0.12, voice: "pulse", duty: "eighth", at: 0 },
+  ],
   [SoundEvent.Start]: [
     { pitch: 392, length: 0.09, voice: "pulse", duty: "half" },
     { pitch: 523, length: 0.09, voice: "pulse", duty: "half", at: 0.1 },

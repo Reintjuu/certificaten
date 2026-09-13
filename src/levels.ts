@@ -1,8 +1,10 @@
-import { certificateOn, enemyOn, mushroomOn, platform, startOn } from "./level-builders";
-import { EnemyKind, Facing } from "./physics";
+import { blockRow, certificateOn, enemyOn, mushroomOn, platform, startOn } from "./level-builders";
+import { BlockContents, EnemyKind, Facing } from "./physics";
+import type { BlockKind } from "./physics";
 
 export type Platform = { x: number; y: number; w: number; h: number };
 export type EnemyDef = { x: number; y: number; facing: Facing; kind?: EnemyKind };
+export type BlockDef = { x: number; y: number; kind: BlockKind; contains: BlockContents };
 export type Rect = { x: number; y: number; w: number; h: number };
 
 export type MushroomDef = { x: number; y: number };
@@ -13,6 +15,7 @@ export type Level = {
   /** Units of level time, counted down like SMB1's 400. */
   timeLimit: number;
   platforms: Platform[];
+  blocks: BlockDef[];
   enemies: EnemyDef[];
   mushrooms: MushroomDef[];
   certificate: Rect;
@@ -62,6 +65,11 @@ export const LEVELS: Level[] = [
     width: LEVEL_WIDTH,
     timeLimit: 400,
     platforms: Object.values(one),
+    blocks: [
+      ...blockRow(140, 176, "?"),
+      ...blockRow(600, 160, "b?b"),
+      ...blockRow(1080, 170, "?", { question: BlockContents.Mushroom }),
+    ],
     enemies: [
       enemyOn(one.ground, { offsetFromLeftEdge: 300, facing: Facing.Left }),
       enemyOn(one.midLedge, { offsetFromLeftEdge: 90, facing: Facing.Left }),
@@ -81,6 +89,7 @@ export const LEVELS: Level[] = [
     width: LEVEL_WIDTH,
     timeLimit: 400,
     platforms: Object.values(two),
+    blocks: [...blockRow(120, 150, "?c"), ...blockRow(840, 176, "bb?")],
     enemies: [
       enemyOn(two.ground, { offsetFromLeftEdge: 250, facing: Facing.Left }),
       enemyOn(two.stair2, { offsetFromLeftEdge: 60, facing: Facing.Left }),
@@ -104,6 +113,7 @@ export const LEVELS: Level[] = [
     width: LEVEL_WIDTH,
     timeLimit: 400,
     platforms: Object.values(three),
+    blocks: [...blockRow(120, 168, "?b?")],
     enemies: [
       enemyOn(three.ground, { offsetFromLeftEdge: 200, facing: Facing.Left }),
       enemyOn(three.landing, { offsetFromLeftEdge: 120, facing: Facing.Left }),

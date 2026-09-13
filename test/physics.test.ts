@@ -10,6 +10,13 @@ import {
   jumpIndexFor,
   createPlayer,
   createEnemies,
+  createBlocks,
+  stepWorld,
+  BlockKind,
+  BlockContents,
+  BlockState,
+  type Block,
+  type Mushroom,
   moveEnemies,
   overlaps,
   EnemyKind,
@@ -47,6 +54,7 @@ function levelWithPlatform(x: number, y: number, w: number): Level {
     width: 480,
     timeLimit: 400,
     platforms: [{ x, y, w, h: 12 }],
+    blocks: [],
     enemies: [],
     mushrooms: [],
     certificate: { x: 0, y: 0, w: 1, h: 1 },
@@ -538,5 +546,113 @@ describe("the shell a koopa leaves behind", () => {
   test("a shell moves six times as fast as a walk, as the ROM has it", () => {
     // KickedShellXSpdData is $30 against MoveNormalEnemy's $08.
     assert.equal(PHYSICS.shellSpeed / PHYSICS.enemyWalkSpeed, 6);
+  });
+});
+
+describe("blocks", () => {
+  const level = levelWithPlatform(0, 200, 480);
+  const blockAt = (x: number, y: number, overrides: Partial<Block> = {}): Block => ({
+    ...createBlocks([{ x, y, kind: BlockKind.Question, contains: BlockContents.Coin }])[0],
+    ...overrides,
+  });
+
+  /** Puts the player's head just under a block and sends it upwards. */
+  function headingInto(block: Block, overrides: Partial<Player> = {}): Player {
+    return player({ x: block.x, y: block.y + block.h + 1, vy: -4, grounded: false, ...overrides });
+  }
+
+  test("you can stand on one, like any other surface", () => {
+    const block = blockAt(100, 150);
+    const p = player({ x: 100, y: 150 - PHYSICS.playerSmallH + 2, vy: 4 });
+    resolvePlatformCollisions(p, level, [block]);
+
+    assert.equal(p.grounded, true);
+    assert.equal(p.y + p.h, block.y);
+  });
+
+  test("a broken one is a hole rather than a surface", () => {
+    const block = blockAt(100, 150, { state: BlockState.Broken });
+    const p = player({ x: 100, y: 150 - PHYSICS.playerSmallH + 2, vy: 4 });
+    resolvePlatformCollisions(p, level, [block]);
+
+    assert.equal(p.grounded, false);
+  });
+
+  test("coming up under one stops you dead and knocks it", () => {
+    const block = blockAt(100, 150);
+    const p = headingInto(block);
+    stepWorld(p, [], [], [block], level, input(), { cameraX: 0, framerule: false });
+
+    assert.equal(p.vy, PHYSICS.headBumpVelocity, "BumpBlock zeroes Player_Y_Speed");
+    assert.equal(p.y, block.y + block.h, "and you end up against its underside");
+    assert.equal(block.bounceTimer, PHYSICS.blockBounceFrames);
+  });
+
+  test("a question block gives up its stamp once and then stands empty", () => {
+    const block = blockAt(100, 150);
+    const first = stepWorld(headingInto(block), [], [], [block], level, input(), {
+      cameraX: 0,
+      framerule: false,
+    });
+    assert.equal(first.coins, 1);
+    assert.equal(block.contains, BlockContents.Nothing);
+
+    const second = stepWorld(headingInto(block), [], [], [block], level, input(), {
+      cameraX: 0,
+      framerule: false,
+    });
+    assert.equal(second.coins, 0, "a block only pays out once");
+  });
+
+  test("a mushroom block puts a mushroom on top of itself", () => {
+    const block = blockAt(100, 150, { contains: BlockContents.Mushroom });
+    const mushrooms: Mushroom[] = [];
+    stepWorld(headingInto(block), [], mushrooms, [block], level, input(), {
+      cameraX: 0,
+      framerule: false,
+    });
+
+    assert.equal(mushrooms.length, 1);
+    assert.equal(mushrooms[0].y + mushrooms[0].h, block.y, "standing on the block it came from");
+  });
+
+  test("big Mario shatters a plain brick, small Mario only rattles it", () => {
+    const brick = (): Block => blockAt(100, 150, { kind: BlockKind.Brick, contains: BlockContents.Nothing });
+
+    const broken = brick();
+    const big = headingInto(broken, { big: true, h: PHYSICS.playerH });
+    stepWorld(big, [], [], [broken], level, input(), { cameraX: 0, framerule: false });
+    assert.equal(broken.state, BlockState.Broken);
+    assert.equal(big.vy, PHYSICS.shatterVelocity, "BrickShatter leaves you drifting up");
+
+    const rattled = brick();
+    const small = headingInto(rattled);
+    stepWorld(small, [], [], [rattled], level, input(), { cameraX: 0, framerule: false });
+    assert.equal(rattled.state, BlockState.Bumping);
+    assert.equal(small.vy, PHYSICS.headBumpVelocity);
+  });
+
+  test("a brick with a stamp in it survives even a big hit", () => {
+    const block = blockAt(100, 150, { kind: BlockKind.Brick });
+    const p = headingInto(block, { big: true, h: PHYSICS.playerH });
+    const result = stepWorld(p, [], [], [block], level, input(), { cameraX: 0, framerule: false });
+
+    assert.equal(result.coins, 1);
+    assert.notEqual(block.state, BlockState.Broken, "there was something in it to give first");
+  });
+
+  test("the knock wears off and leaves the block where it was", () => {
+    const block = blockAt(100, 150);
+    const p = headingInto(block);
+    stepWorld(p, [], [], [block], level, input(), { cameraX: 0, framerule: false });
+
+    for (let frame = 0; frame < PHYSICS.blockBounceFrames; frame++) {
+      stepWorld(player({ x: 400, y: 100 }), [], [], [block], level, input(), {
+        cameraX: 0,
+        framerule: false,
+      });
+    }
+    assert.equal(block.bounceTimer, 0);
+    assert.equal(block.state, BlockState.Idle);
   });
 });

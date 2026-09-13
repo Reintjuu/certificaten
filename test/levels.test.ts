@@ -2,8 +2,16 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { CANVAS_W, CANVAS_H, PHYSICS } from "../src/engine";
 import { LEVELS, type Level, type Platform } from "../src/levels";
-import { ENEMY_SIZE, PLAYER_SIZE } from "../src/level-builders";
-import { PALETTE, BIG_PLAYER, SMALL_PLAYER, Goomba, GoombaSquashed, Mushroom } from "../src/sprites";
+import { BLOCK_SIZE, ENEMY_SIZE, PLAYER_SIZE } from "../src/level-builders";
+import * as sprites from "../src/sprites";
+import { PALETTE, BIG_PLAYER, SMALL_PLAYER, Goomba, Mushroom, type Frame } from "../src/sprites";
+
+/** How far the feet climb on the fastest row of the jump table: v^2 / 2g. */
+const RUNNING_RISE = PHYSICS.jumpVelocity[4] ** 2 / (2 * PHYSICS.gravityRising[4]);
+
+function overlapsX(platform: Platform, x: number): boolean {
+  return x >= platform.x && x + BLOCK_SIZE.w <= platform.x + platform.w;
+}
 
 function platformUnder(level: Level, x: number, w: number, footY: number): Platform | undefined {
   return level.platforms.find(
@@ -70,6 +78,36 @@ describe("level geometry", () => {
       assert.ok(certificate.y >= 0);
     });
 
+    test(`${name}: every block sits in clear air within jumping reach`, () => {
+      for (const block of level.blocks) {
+        assert.ok(
+          block.x >= 0 && block.x + BLOCK_SIZE.w <= level.width,
+          `a block at x=${block.x} hangs over the edge of the level`
+        );
+        for (const platform of level.platforms) {
+          const overlaps =
+            block.x < platform.x + platform.w &&
+            block.x + BLOCK_SIZE.w > platform.x &&
+            block.y < platform.y + platform.h &&
+            block.y + BLOCK_SIZE.h > platform.y;
+          assert.ok(!overlaps, `a block at (${block.x}, ${block.y}) is buried in a platform`);
+        }
+
+        // You knock a block with your head, so the check is against the
+        // underside, from the floor nearest below it.
+        const standing = level.platforms
+          .filter((platform) => platform.y >= block.y + BLOCK_SIZE.h && overlapsX(platform, block.x))
+          .sort((a, b) => a.y - b.y)[0];
+        assert.ok(standing, `nothing to jump from under the block at (${block.x}, ${block.y})`);
+        const headroom = standing.y - PLAYER_SIZE.h - (block.y + BLOCK_SIZE.h);
+        assert.ok(
+          headroom < RUNNING_RISE,
+          `the block at (${block.x}, ${block.y}) is ${headroom.toFixed(0)}px over your head, ` +
+            `and a running jump only lifts you ${RUNNING_RISE.toFixed(0)}px`
+        );
+      }
+    });
+
     test(`${name}: has intro and outro dialogue`, () => {
       assert.ok(level.intro.length > 0, "no intro lines");
       assert.ok(level.outro.length > 0, "no outro lines");
@@ -78,9 +116,6 @@ describe("level geometry", () => {
 });
 
 describe("jump reach", () => {
-  // How far the feet can climb, straight from the physics: v^2 / 2g for the
-  // fastest and slowest rows of the jump table.
-  const runningRise = PHYSICS.jumpVelocity[4] ** 2 / (2 * PHYSICS.gravityRising[4]);
   const HORIZONTAL_REACH = 130;
   const MARGIN = 8;
 
@@ -102,9 +137,9 @@ describe("jump reach", () => {
         }
 
         assert.ok(
-          easiestClimb === Infinity || easiestClimb <= runningRise - MARGIN,
+          easiestClimb === Infinity || easiestClimb <= RUNNING_RISE - MARGIN,
           `platform at x=${target.x} y=${target.y} needs a ${easiestClimb.toFixed(0)}px climb, ` +
-            `and a running jump only lifts the feet ${runningRise.toFixed(0)}px`
+            `and a running jump only lifts the feet ${RUNNING_RISE.toFixed(0)}px`
         );
       }
     });
@@ -123,7 +158,23 @@ describe("sprites", () => {
     BigJump: BIG_PLAYER.jump,
     BigCrouch: BIG_PLAYER.crouch,
   };
-  const frames = { ...playerFrames, Goomba, GoombaSquashed, Mushroom };
+  /**
+   * Every frame the module exports, found rather than listed, so a sprite
+   * added tomorrow cannot quietly skip these checks. That has happened once
+   * already, with a glyph that was never drawn.
+   */
+  const isFrame = (value: unknown): value is Frame =>
+    Array.isArray(value) && value.every((row) => typeof row === "string");
+  const frames: Record<string, Frame> = { ...playerFrames };
+  for (const [name, exported] of Object.entries(sprites)) {
+    if (isFrame(exported)) {
+      frames[name] = exported;
+    }
+  }
+
+  test("the sweep above actually found the sprites", () => {
+    assert.ok(Object.keys(frames).length > Object.keys(playerFrames).length + 5);
+  });
 
   test("every frame is a rectangular grid", () => {
     for (const [name, frame] of Object.entries(frames)) {

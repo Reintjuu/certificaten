@@ -45,6 +45,12 @@ import { makeTrainer, type GenerationRecord, type Trainer, type TrainerOptions }
  */
 const EPOCHS_PER_GENERATION = 20;
 const GENERATIONS = 100;
+/**
+ * How many of the student's own runs stay in the lesson set. Keeping every one
+ * would grow it past what a browser can chew through in a frame, and keeping
+ * none makes the student chase the last mistake and forget the previous.
+ */
+const CORRECTION_RUNS_KEPT = 5;
 const LEARNING_RATE = 0.5;
 const TRAINING_SEED = 20260913;
 
@@ -55,23 +61,42 @@ const TRAINING_SEED = 20260913;
  */
 type Lesson = { inputs: number[]; targets: number[] };
 
-export function recordLessons(teacher: Genome, levelIndex: number, architecture: Architecture): Lesson[] {
+/**
+ * Plays a level with one genome at the wheel and asks the teacher, at every
+ * frame, what it would have done there. Drive with the teacher and you get
+ * its own run written down; drive with the student and you get the answers to
+ * the questions the student is actually facing.
+ */
+function walkAndAsk(
+  driverFor: () => Genome,
+  teacher: Genome,
+  levelIndex: number,
+  architecture: Architecture
+): Lesson[] {
   const lessons: Lesson[] = [];
   let run = startRun(levelIndex);
 
   while (run.outcome === RunOutcome.Running) {
     const inputs = features(run.state, LEVELS[levelIndex]);
     lessons.push({ inputs, targets: outputsOf(forwardPass(teacher, inputs, architecture).activations) });
-    run = advanceRun(run, teacher, levelIndex, architecture);
+    run = advanceRun(run, driverFor(), levelIndex, architecture);
   }
   return lessons;
+}
+
+export function recordLessons(teacher: Genome, levelIndex: number, architecture: Architecture): Lesson[] {
+  return walkAndAsk(() => teacher, teacher, levelIndex, architecture);
 }
 
 export function createCloneTrainerUsing(teacherFor: (levelIndex: number) => Genome) {
   return (levelIndex: number, options: TrainerOptions = {}): Trainer => {
     const { seed = TRAINING_SEED + levelIndex, architecture = DEFAULT_ARCHITECTURE } = options;
     const random = createRandom(seed);
-    const lessons = recordLessons(teacherFor(levelIndex), levelIndex, architecture);
+    const teacher = teacherFor(levelIndex);
+    const taught = recordLessons(teacher, levelIndex, architecture);
+    // DAgger's correction sets, newest last, oldest dropped.
+    const corrections: Lesson[][] = [];
+    let lessons = taught;
     let genome = randomGenome(random, architecture);
     const generations: GenerationRecord[] = [];
     let framesSimulated = 0;
@@ -107,6 +132,17 @@ export function createCloneTrainerUsing(teacherFor: (levelIndex: number) => Geno
         lastPath = path;
       }
       framesSimulated += student.frames;
+
+      // Ask the teacher about the states the student got itself into. Without
+      // this the lesson set only covers the teacher's own path, and the first
+      // pixel of drift puts the student somewhere nobody taught it.
+      const correction = walkAndAsk(() => genome, teacher, levelIndex, architecture);
+      framesSimulated += correction.length;
+      corrections.push(correction);
+      if (corrections.length > CORRECTION_RUNS_KEPT) {
+        corrections.shift();
+      }
+      lessons = [...taught, ...corrections.flat()];
 
       generations.push({
         generation: generations.length + 1,

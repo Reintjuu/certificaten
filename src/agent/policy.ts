@@ -8,6 +8,8 @@ import {
   NO_INPUT,
   PHYSICS,
   isActive,
+  surfacesOf,
+  type Block,
   type GameState,
   type Input,
   type Level,
@@ -243,14 +245,16 @@ const PROBE_RANGE = 80;
  * positive is a step up, negative a drop, and -1 means no ground at all within
  * range, which is what a pit looks like. Without these the agent is blind to
  * the level's shape and can only aim at the certificate, which is why it used
- * to clear a level by luck rather than by reading the ledge in front of it.
+ * to clear a level by luck rather than by reading the ledge in front of it. A
+ * block counts as ground for as long as it is standing, so the agent sees the
+ * same world it is actually walking on.
  */
-function groundProbe(level: Level, x: number, feetY: number): number {
+function groundProbe(level: Level, blocks: Block[], x: number, feetY: number): number {
   let surfaceY = Infinity;
-  for (const platform of level.platforms) {
-    const spansX = x >= platform.x && x <= platform.x + platform.w;
-    if (spansX && platform.y >= feetY - PROBE_RANGE && platform.y < surfaceY) {
-      surfaceY = platform.y;
+  for (const surface of surfacesOf(level, blocks)) {
+    const spansX = x >= surface.x && x <= surface.x + surface.w;
+    if (spansX && surface.y >= feetY - PROBE_RANGE && surface.y < surfaceY) {
+      surfaceY = surface.y;
     }
   }
   if (!Number.isFinite(surfaceY)) {
@@ -283,7 +287,9 @@ export function features(state: GameState, level: Level): number[] {
   const centerX = player.x + player.w / 2;
 
   return [
-    ...PROBE_OFFSETS.map((offset) => groundProbe(level, centerX + player.facing * offset, feetY)),
+    ...PROBE_OFFSETS.map((offset) =>
+      groundProbe(level, state.blocks, centerX + player.facing * offset, feetY)
+    ),
     (certificate.x - player.x) / CANVAS_W,
     (certificate.y - player.y) / CANVAS_H,
     player.vx / PHYSICS.maxRunSpeed,

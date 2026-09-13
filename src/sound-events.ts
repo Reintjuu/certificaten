@@ -4,7 +4,7 @@
 // what changed and hands the answer to the synth. Keeping the deciding apart
 // from the playing is what makes it testable at all, since a WebAudio context
 // is not something a unit test can listen to.
-import { EnemyState, isActive, type GameState } from "./engine";
+import { BlockState, EnemyState, PHYSICS, isActive, type GameState } from "./engine";
 
 export const SoundEvent = {
   Jump: "jump",
@@ -15,6 +15,9 @@ export const SoundEvent = {
   Certificate: "certificate",
   Talk: "talk",
   Start: "start",
+  Stamp: "stamp",
+  Bump: "bump",
+  Break: "break",
 } as const;
 export type SoundEvent = (typeof SoundEvent)[keyof typeof SoundEvent];
 
@@ -26,6 +29,15 @@ function countDealtWith(state: GameState): number {
 /** Kicking a shell awake, which SMB1 answers with the stomp blip as well. */
 function countSliding(state: GameState): number {
   return state.enemies.filter((enemy) => enemy.state === EnemyState.Sliding).length;
+}
+
+/** A block only ever goes one way: idle, knocked, and sometimes to rubble. */
+function countBroken(state: GameState): number {
+  return state.blocks.filter((block) => block.state === BlockState.Broken).length;
+}
+
+function countBumped(state: GameState): number {
+  return state.blocks.filter((block) => block.bounceTimer === PHYSICS.blockBounceFrames).length;
 }
 
 function countTaken(state: GameState): number {
@@ -52,6 +64,13 @@ export function eventsBetween(previous: GameState, next: GameState): SoundEvent[
   }
   if (countTaken(next) > countTaken(previous)) {
     events.push(SoundEvent.Grow);
+  }
+  if (next.coins > previous.coins) {
+    events.push(SoundEvent.Stamp);
+  } else if (countBroken(next) > countBroken(previous)) {
+    events.push(SoundEvent.Break);
+  } else if (countBumped(next) > countBumped(previous)) {
+    events.push(SoundEvent.Bump);
   }
   // Losing your size is a hit; gaining it is the mushroom above.
   if (previous.player.big && !next.player.big && next.player.invincibleFramerules > 0) {

@@ -16,6 +16,10 @@ export const PALETTE: Record<string, string | undefined> = {
   'g': '#1f6b1f',
   'L': '#7ad07a',
   'O': '#e8a020',
+  'A': '#e09020',
+  'a': '#8c4a12',
+  'N': '#c86818',
+  'n': '#6b3a10',
 }
 
 export type Frame = string[]
@@ -349,6 +353,85 @@ export const KoopaShell: Frame = [
   '   gggggggggg   ',
   '  WWWWWWWWWWWW  ',
   '   WWWWWWWWWW   ',
+  '                ',
+  '                ',
+]
+
+// One metatile of the world, 16 across like everything else in SMB1.
+export const QuestionBlock: Frame = [
+  'AAAAAAAAAAAAAAAA',
+  'AWWWWWWWWWWWWWWa',
+  'AWAAAAAAAAAAAAaa',
+  'AWAAAAKKKKAAAAaa',
+  'AWAAAKKaaKKAAAaa',
+  'AWAAAKaAAaKKAAaa',
+  'AWAAAaaAAaKKAAaa',
+  'AWAAAAAAAKKAAAaa',
+  'AWAAAAAAKKAAAAaa',
+  'AWAAAAAKKAAAAAaa',
+  'AWAAAAAKKAAAAAaa',
+  'AWAAAAAAAAAAAAaa',
+  'AWAAAAAKKAAAAAaa',
+  'AWAAAAAKKAAAAAaa',
+  'AWAaaaaaaaaaaaaa',
+  'Aaaaaaaaaaaaaaaa',
+]
+
+// The same block once it has given up what it had.
+export const EmptyBlock: Frame = [
+  'aaaaaaaaaaaaaaaa',
+  'anaaaaaaaaaaaaan',
+  'anaaaaaaaaaaaaan',
+  'anaaaaaaaaaaaaan',
+  'anaaaaaaaaaaaaan',
+  'anaaaaaaaaaaaaan',
+  'anaaaaaaaaaaaaan',
+  'anaaaaaaaaaaaaan',
+  'anaaaaaaaaaaaaan',
+  'anaaaaaaaaaaaaan',
+  'anaaaaaaaaaaaaan',
+  'anaaaaaaaaaaaaan',
+  'anaaaaaaaaaaaaan',
+  'anaaaaaaaaaaaaan',
+  'anaaaaaaaaaaaaan',
+  'aaaaaaaaaaaaaaaa',
+]
+
+export const BrickBlock: Frame = [
+  'NNNNNNNNNNNNNNNN',
+  'NNNNNNNNNNNNNNNN',
+  'NNNNNNNnNNNNNNNn',
+  'nnnnnnnnnnnnnnnn',
+  'NNNNNNNNNNNNNNNN',
+  'NNNnNNNNNNNnNNNN',
+  'NNNnNNNNNNNnNNNN',
+  'nnnnnnnnnnnnnnnn',
+  'NNNNNNNNNNNNNNNN',
+  'NNNNNNNnNNNNNNNn',
+  'NNNNNNNnNNNNNNNn',
+  'nnnnnnnnnnnnnnnn',
+  'NNNNNNNNNNNNNNNN',
+  'NNNnNNNNNNNnNNNN',
+  'NNNnNNNNNNNnNNNN',
+  'nnnnnnnnnnnnnnnn',
+]
+
+/** The stamp that pops out of a block, SMB1's coin under a duller name. */
+export const Stamp: Frame = [
+  '                ',
+  '                ',
+  '     YYYYYY     ',
+  '    YYOOOOYY    ',
+  '   YYOOYYOOYY   ',
+  '   YYOYYYYOYY   ',
+  '   YYOYYYYOYY   ',
+  '   YYOYYYYOYY   ',
+  '   YYOYYYYOYY   ',
+  '   YYOYYYYOYY   ',
+  '   YYOYYYYOYY   ',
+  '   YYOOYYOOYY   ',
+  '    YYOOOOYY    ',
+  '     YYYYYY     ',
   '                ',
   '                ',
 ]

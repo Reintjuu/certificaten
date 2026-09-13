@@ -2,8 +2,8 @@
 // lands, and what happens when it meets an enemy. Everything here works on
 // plain entities, knows nothing about phases, dialogue or levels beyond their
 // platforms, and never touches the DOM.
-import { ENEMY_SIZE, MUSHROOM_SIZE, PLAYER_SIZE, SMALL_PLAYER_SIZE } from "./level-builders";
-import type { EnemyDef, Level } from "./levels";
+import { BLOCK_SIZE, ENEMY_SIZE, MUSHROOM_SIZE, PLAYER_SIZE, SMALL_PLAYER_SIZE } from "./level-builders";
+import type { BlockDef, EnemyDef, Level, Rect } from "./levels";
 
 export const CANVAS_W = 480;
 export const CANVAS_H = 270;
@@ -88,6 +88,20 @@ export const PHYSICS = {
   injuryFramerules: 0x08,
   /** Mushrooms move like a normal enemy. */
   mushroomWalkSpeed: 0x08 * SUBPIXEL,
+
+  /** BlockBounceTimer: how long a bumped block rides up and drops back. */
+  blockBounceFrames: 0x10,
+  /** BumpBlock: the block itself leaves at $fe, so two pixels a frame. */
+  blockBounceVelocity: 0xfe - 0x100,
+  /**
+   * BumpBlock zeroes Player_Y_Speed when you knock a solid block, so you stop
+   * dead under it. BrickShatter leaves $fe instead: a broken brick lets you
+   * keep drifting up through the gap.
+   */
+  headBumpVelocity: 0,
+  shatterVelocity: 0xfe - 0x100,
+  /** JCoinC: the coin that pops out leaves at $fb and falls back. */
+  coinPopVelocity: 0xfb - 0x100,
 
   playerSmallH: SMALL_PLAYER_SIZE.h,
   mushroomW: MUSHROOM_SIZE.w,
@@ -261,6 +275,58 @@ function resizePlayer(p: Player): void {
   p.h = height;
 }
 
+export const BlockKind = { Brick: "brick", Question: "question" } as const;
+export type BlockKind = (typeof BlockKind)[keyof typeof BlockKind];
+
+/** What comes out of a block, which is nothing once it has been had. */
+export const BlockContents = { Nothing: "nothing", Coin: "coin", Mushroom: "mushroom" } as const;
+export type BlockContents = (typeof BlockContents)[keyof typeof BlockContents];
+
+export const BlockState = { Idle: "idle", Bumping: "bumping", Broken: "broken" } as const;
+export type BlockState = (typeof BlockState)[keyof typeof BlockState];
+
+export type Block = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  kind: BlockKind;
+  contains: BlockContents;
+  state: BlockState;
+  /** Counts BlockBounceTimer down, and with it the coin popping out. */
+  bounceTimer: number;
+  /** What the bounce is showing on its way up, for the frames it lasts. */
+  releasing: BlockContents;
+};
+
+export function createBlocks(definitions: BlockDef[]): Block[] {
+  return definitions.map((definition) => ({
+    x: definition.x,
+    y: definition.y,
+    w: BLOCK_SIZE.w,
+    h: BLOCK_SIZE.h,
+    kind: definition.kind,
+    contains: definition.contains,
+    state: BlockState.Idle,
+    bounceTimer: 0,
+    releasing: BlockContents.Nothing,
+  }));
+}
+
+/** Solid until it is rubble: a broken brick is a hole you can jump through. */
+export function isSolid(block: Block): boolean {
+  return block.state !== BlockState.Broken;
+}
+
+/**
+ * Everything with a surface you can stand on. The physics lands on this list
+ * and the agent's terrain probes read it, so what the agent believes is ground
+ * is by construction what actually holds it up.
+ */
+export function surfacesOf(level: Level, blocks: Block[]): Rect[] {
+  return [...level.platforms, ...blocks.filter(isSolid)];
+}
+
 export type Mushroom = {
   x: number;
   y: number;
@@ -286,7 +352,7 @@ export function createMushrooms(definitions: { x: number; y: number }[]): Mushro
 }
 
 /** Mushrooms walk and fall exactly like the enemies do. */
-function moveMushrooms(mushrooms: Mushroom[], level: Level, cameraX: number): void {
+function moveMushrooms(mushrooms: Mushroom[], level: Level, cameraX: number, blocks: Block[]): void {
   for (const mushroom of mushrooms) {
     if (mushroom.taken) {
       continue;
@@ -300,7 +366,7 @@ function moveMushrooms(mushrooms: Mushroom[], level: Level, cameraX: number): vo
     mushroom.x += mushroom.vx;
     mushroom.vy = Math.min(mushroom.vy + PHYSICS.enemyGravity, PHYSICS.enemyMaxFallSpeed);
     mushroom.y += mushroom.vy;
-    landOnPlatform(mushroom, level);
+    landOnPlatform(mushroom, level, blocks);
     if (mushroom.x < 0) {
       mushroom.vx = Math.abs(mushroom.vx);
     }
@@ -332,13 +398,14 @@ export function createEnemies(definitions: EnemyDef[]): Enemy[] {
 /** Drops a box onto any platform surface it crossed this frame. */
 function landOnPlatform(
   box: { x: number; y: number; w: number; h: number; vy: number },
-  level: Level
+  level: Level,
+  blocks: Block[] = []
 ): boolean {
-  for (const platform of level.platforms) {
-    const horizontallyOver = box.x + box.w > platform.x && box.x < platform.x + platform.w;
-    const crossedSurface = box.y + box.h >= platform.y && box.y + box.h - box.vy <= platform.y;
+  for (const surface of surfacesOf(level, blocks)) {
+    const horizontallyOver = box.x + box.w > surface.x && box.x < surface.x + surface.w;
+    const crossedSurface = box.y + box.h >= surface.y && box.y + box.h - box.vy <= surface.y;
     if (box.vy >= 0 && horizontallyOver && crossedSurface) {
-      box.y = platform.y - box.h;
+      box.y = surface.y - box.h;
       box.vy = 0;
       return true;
     }
@@ -458,9 +525,9 @@ export function applyGravity(p: Player, input: Input): void {
   }
 }
 
-/** Lands the player on any platform whose surface it crossed this frame. */
-export function resolvePlatformCollisions(p: Player, level: Level): void {
-  p.grounded = landOnPlatform(p, level);
+/** Lands the player on any surface it crossed this frame, blocks included. */
+export function resolvePlatformCollisions(p: Player, level: Level, blocks: Block[] = []): void {
+  p.grounded = landOnPlatform(p, level, blocks);
 }
 
 export function walkCycleFramesFor(speed: number): number {
@@ -490,7 +557,13 @@ export function updateAnimation(p: Player, dir: Direction): void {
  * until the camera reaches them, the way the original spawns them from the
  * level data as it scrolls.
  */
-export function moveEnemies(enemies: Enemy[], level: Level, cameraX: number, framerule: boolean): void {
+export function moveEnemies(
+  enemies: Enemy[],
+  level: Level,
+  cameraX: number,
+  framerule: boolean,
+  blocks: Block[] = []
+): void {
   for (const enemy of enemies) {
     if (enemy.state === EnemyState.Gone) {
       continue;
@@ -521,7 +594,7 @@ export function moveEnemies(enemies: Enemy[], level: Level, cameraX: number, fra
     enemy.x += enemy.vx;
     enemy.vy = Math.min(enemy.vy + PHYSICS.enemyGravity, PHYSICS.enemyMaxFallSpeed);
     enemy.y += enemy.vy;
-    landOnPlatform(enemy, level);
+    landOnPlatform(enemy, level, blocks);
 
     // The level's outer walls are the only thing that turns them around.
     if (enemy.x < 0) {
@@ -646,15 +719,63 @@ function collectMushrooms(p: Player, mushrooms: Mushroom[]): void {
   }
 }
 
+/**
+ * PlayerHeadCollision: coming up under a block stops you dead against it and
+ * knocks it. Big Mario shatters a plain brick; small Mario only rattles it.
+ * Whatever was inside comes out, and the stamp is credited the moment it
+ * pops, exactly as GiveOneCoin does: the coin flying up is only animation.
+ */
+function bumpBlocks(p: Player, blocks: Block[], mushrooms: Mushroom[]): BlockContents {
+  for (const block of blocks) {
+    if (!isSolid(block)) {
+      continue;
+    }
+    const underside = block.y + block.h;
+    const horizontallyUnder = p.x + p.w > block.x && p.x < block.x + block.w;
+    const crossedUnderside = p.y <= underside && p.y - p.vy >= underside;
+    if (p.vy >= 0 || !horizontallyUnder || !crossedUnderside) {
+      continue;
+    }
+
+    p.y = underside;
+    const shatters = block.kind === BlockKind.Brick && block.contains === BlockContents.Nothing && p.big;
+    p.vy = shatters ? PHYSICS.shatterVelocity : PHYSICS.headBumpVelocity;
+
+    block.releasing = block.contains;
+    block.contains = BlockContents.Nothing;
+    block.bounceTimer = PHYSICS.blockBounceFrames;
+    block.state = shatters ? BlockState.Broken : BlockState.Bumping;
+    if (block.releasing === BlockContents.Mushroom) {
+      mushrooms.push(...createMushrooms([{ x: block.x, y: block.y - MUSHROOM_SIZE.h }]));
+    }
+    return block.releasing;
+  }
+  return BlockContents.Nothing;
+}
+
+/** The bounce is a timer, and the coin popping out of it rides the same one. */
+function settleBlocks(blocks: Block[]): void {
+  for (const block of blocks) {
+    if (block.bounceTimer > 0) {
+      block.bounceTimer--;
+      if (block.bounceTimer === 0 && block.state === BlockState.Bumping) {
+        block.state = BlockState.Idle;
+        block.releasing = BlockContents.Nothing;
+      }
+    }
+  }
+}
+
 /** Everything a single playing frame does to the world, in order. */
 export function stepWorld(
   p: Player,
   enemies: Enemy[],
   mushrooms: Mushroom[],
+  blocks: Block[],
   level: Level,
   input: Input,
   view: { cameraX: number; framerule: boolean }
-): { died: boolean } {
+): { died: boolean; coins: number } {
   if (view.framerule && p.invincibleFramerules > 0) {
     p.invincibleFramerules--;
   }
@@ -673,15 +794,22 @@ export function stepWorld(
   p.y += p.vy;
   const wasFalling = wasAirborne && p.vy > 0;
 
-  resolvePlatformCollisions(p, level);
+  // Age what happened before deciding what happens now, so a block knocked
+  // this frame still has its whole bounce ahead of it.
+  settleBlocks(blocks);
+  const released = bumpBlocks(p, blocks, mushrooms);
+  resolvePlatformCollisions(p, level, blocks);
   // SMB1 never scrolls back, so the left edge of the view is a wall.
   p.x = clamp(p.x, view.cameraX, level.width - p.w);
   updateAnimation(p, dir);
 
-  moveEnemies(enemies, level, view.cameraX, view.framerule);
-  moveMushrooms(mushrooms, level, view.cameraX);
+  moveEnemies(enemies, level, view.cameraX, view.framerule, blocks);
+  moveMushrooms(mushrooms, level, view.cameraX, blocks);
   collectMushrooms(p, mushrooms);
   const hitByEnemy = resolveEnemyCollisions(p, enemies, wasFalling);
   const fellOut = p.y > CANVAS_H + PHYSICS.deathFallMargin;
-  return { died: hitByEnemy || fellOut };
+  return {
+    died: hitByEnemy || fellOut,
+    coins: released === BlockContents.Coin ? 1 : 0,
+  };
 }

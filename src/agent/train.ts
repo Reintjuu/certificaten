@@ -6,14 +6,26 @@
 // write a file; there you download the result and commit it.
 import { writeFileSync } from "node:fs";
 import { LEVELS } from "../engine";
-import { GENERATIONS, POPULATION_SIZE, createTrainer, type LevelHistory } from "./evolution";
+import { GENERATIONS, POPULATION_SIZE, TRAINING_SEED, createTrainer, type LevelHistory } from "./evolution";
 import { DEFAULT_ARCHITECTURE } from "./policy";
 
 export type { GenerationRecord, LevelHistory } from "./evolution";
 
+/**
+ * Evolution gets stuck, and which run gets stuck is a matter of the seed: on
+ * one seed level 2 came out at 616 frames where another seed found 542. Three
+ * restarts and keep the best costs a couple of minutes and takes the luck of
+ * a single draw out of what ends up committed.
+ */
+const RESTARTS = 3;
+
 const FPS = 60;
 const SECONDS_PER_HOUR = 3600;
 const MS_PER_SECOND = 1000;
+
+function fitnessOfBest(history: LevelHistory): number {
+  return history.generations[history.bestGeneration].bestFitness;
+}
 
 function main(): void {
   const startedAt = Date.now();
@@ -22,24 +34,32 @@ function main(): void {
 
   for (let levelIndex = 0; levelIndex < LEVELS.length; levelIndex++) {
     console.log(`\nTraining level ${levelIndex + 1}/${LEVELS.length}...`);
-    const trainer = createTrainer(levelIndex);
+    const attempts: LevelHistory[] = [];
 
-    while (!trainer.done) {
-      const record = trainer.runGeneration();
-      console.log(
-        `  level ${levelIndex + 1} gen ${record.generation}/${GENERATIONS}: ` +
-          `best ${record.bestFitness.toFixed(1)}, mean ${record.meanFitness.toFixed(1)}, ` +
-          `${record.solved}/${POPULATION_SIZE} solved`
-      );
+    for (let restart = 0; restart < RESTARTS; restart++) {
+      const trainer = createTrainer(levelIndex, { seed: TRAINING_SEED + levelIndex + restart * 1000 });
+
+      while (!trainer.done) {
+        const record = trainer.runGeneration();
+        console.log(
+          `  level ${levelIndex + 1} run ${restart + 1}/${RESTARTS} gen ${record.generation}/${GENERATIONS}: ` +
+            `best ${record.bestFitness.toFixed(1)}, mean ${record.meanFitness.toFixed(1)}, ` +
+            `${record.solved}/${POPULATION_SIZE} solved`
+        );
+      }
+
+      attempts.push(trainer.toHistory());
+      framesSimulated += trainer.framesSimulated;
     }
 
-    const history = trainer.toHistory();
+    const history = attempts.reduce((best, attempt) =>
+      fitnessOfBest(attempt) > fitnessOfBest(best) ? attempt : best
+    );
     const best = history.generations[history.bestGeneration];
     console.log(
       `  -> best genome from generation ${best.generation} (fitness ${best.bestFitness.toFixed(1)}, ` +
         `${best.solved}/${POPULATION_SIZE} of that generation solved the level)`
     );
-    framesSimulated += trainer.framesSimulated;
     levels.push(history);
   }
 

@@ -131,7 +131,7 @@ function drawHud(state: GameState): void {
   const time = String(Math.max(0, state.timeRemaining)).padStart(3, "0");
   const columns = [
     { x: 24, label: "QUEESTE", value: `${state.levelIndex + 1}-${LEVELS.length}` },
-    { x: 200, label: "LOKET", value: `${state.levelIndex + 1}` },
+    { x: 176, label: "STEMPELS", value: String(state.coins).padStart(2, "0") },
     { x: 344, label: "TIJD", value: time },
   ];
 

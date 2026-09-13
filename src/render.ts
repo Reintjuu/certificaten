@@ -1,9 +1,14 @@
 import {
+  BlockContents,
+  BlockKind,
+  BlockState,
   CANVAS_H,
   CANVAS_W,
   EnemyKind,
   EnemyState,
+  PHYSICS,
   isVisible,
+  type Block,
   type Enemy,
   type GameState,
   type Level,
@@ -18,6 +23,10 @@ import {
   GoombaSquashed,
   Koopa,
   KoopaShell,
+  QuestionBlock,
+  EmptyBlock,
+  BrickBlock,
+  Stamp,
   Mushroom,
   type Frame,
 } from "./sprites";
@@ -146,7 +155,43 @@ function playerFrame(player: Player): Frame {
   return poses.idle;
 }
 
+/** A bumped block rides up on BlockBounceTimer and drops back onto its spot. */
+function bounceOffset(timer: number): number {
+  const half = PHYSICS.blockBounceFrames / 2;
+  const rising = timer > half ? PHYSICS.blockBounceFrames - timer : timer;
+  return -rising * Math.abs(PHYSICS.blockBounceVelocity);
+}
+
+function blockFrame(block: Block): Frame | null {
+  if (block.state === BlockState.Broken) {
+    return null;
+  }
+  if (block.kind === BlockKind.Brick) {
+    return BrickBlock;
+  }
+  return block.contains === BlockContents.Nothing && block.state !== BlockState.Bumping
+    ? EmptyBlock
+    : QuestionBlock;
+}
+
+function drawBlocks(ctx: CanvasRenderingContext2D, blocks: Block[]): void {
+  for (const block of blocks) {
+    const frame = blockFrame(block);
+    if (frame === null) {
+      continue;
+    }
+    const lift = bounceOffset(block.bounceTimer);
+    drawSprite(ctx, frame, block.x, block.y + lift, 1);
+    // The stamp is credited the moment it pops, so this is only the flourish.
+    if (block.releasing === BlockContents.Coin) {
+      drawSprite(ctx, Stamp, block.x, block.y - block.h + lift * 2, 1);
+    }
+  }
+}
+
 export function drawEntities(ctx: CanvasRenderingContext2D, state: GameState): void {
+  drawBlocks(ctx, state.blocks);
+
   for (const enemy of state.enemies) {
     const frame = enemyFrame(enemy);
     if (frame === null) {

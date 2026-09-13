@@ -13,11 +13,26 @@ import {
   GoombaSquashed,
   Koopa,
   KoopaShell,
+  QuestionBlock,
+  EmptyBlock,
+  BrickBlock,
+  Stamp,
   Mushroom,
   type Frame,
 } from "./sprite-frames";
 
-export { PALETTE, Goomba, GoombaSquashed, Koopa, KoopaShell, Mushroom };
+export {
+  PALETTE,
+  Goomba,
+  GoombaSquashed,
+  Koopa,
+  KoopaShell,
+  QuestionBlock,
+  EmptyBlock,
+  BrickBlock,
+  Stamp,
+  Mushroom,
+};
 
 /** One set of poses per player size, so the renderer picks a set, not a frame. */
 export const SMALL_PLAYER = { idle: SmallIdle, walk: [SmallWalk1, SmallWalk2], jump: SmallJump } as const;

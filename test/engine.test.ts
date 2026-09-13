@@ -25,6 +25,7 @@ function makeLevel(overrides: Partial<Level> = {}): Level {
     width: 480,
     timeLimit: 400,
     platforms: [{ x: 0, y: GROUND_Y, w: 480, h: 20 }],
+    blocks: [],
     enemies: [],
     mushrooms: [],
     certificate: { x: 460, y: 20, w: 18, h: 24 },

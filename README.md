@@ -29,6 +29,7 @@ De bewegingsregels komen uit de Super Mario Bros.-disassembly (`smbdis.asm`), ni
 | Max. valsnelheid               | `$04`                 | 4 px per frame              |
 | Terugstuiter na pletten        | `$fc`                 | −4 px per frame             |
 | Geschopt schild                | `$30`                 | 3 px per frame              |
+| Blok stuitert weg              | `$fe`, `$10`          | 2 px per frame, 16 frames   |
 | Schild komt weer bij           | `$10`                 | 16 framerules               |
 
 De levels zijn 1440px breed en de camera scrollt mee zoals in SMB1: hij volgt je zodra je voorbij het midden komt en gaat **nooit terug**, waardoor de linkerrand van het beeld een muur is. Vijanden hebben echte physics: ze vallen, en ze draaien _niet_ om bij een rand maar lopen eraf, precies zoals SMB1's normale vijanden; ze blijven slapen tot de camera ze in beeld brengt, zoals het origineel ze uit de leveldata spawnt.
@@ -38,6 +39,8 @@ Twee timers, allebei uit de ROM: de **framerule** (`IntervalTimerControl`, 21 fr
 Je begint klein. Een paddenstoel maakt je groot (`BoundBoxCtrlData`: 24px hoog in plaats van 12), en alleen als grote Mario kun je bukken, waarbij je hitbox weer naar de kleine krimpt. Een klap kost een grote speler zijn formaat in plaats van zijn leven, met `$08` framerules onkwetsbaarheid erna (`ForceInjury`); klein zijn en geraakt worden is wél fataal. Paddenstoelen bewegen als vijanden: ze lopen, vallen en rollen van randen af.
 
 Er lopen twee soorten vijanden rond. Een goomba wordt plat en verdwijnt. Een koopa kruipt in zijn schild: dat schild blijft liggen, en loop je ertegenaan dan schopt je het weg met `$30` (3 px per frame, zes keer een looppas, uit `KickedShellXSpdData`), waarna het alles omver maait wat het onderweg tegenkomt. Een stilliggend schild telt `RevivalRateData` af (`$10` framerules) en dan staat de koopa weer op zijn poten. Erop springen zet een glijdend schild weer stil, en dat is hoe je een schild tegen de rest van de rij aan gebruikt zonder er zelf onder te komen.
+
+Aan blokken kom je van onderaf. `PlayerHeadCollision` zet je verticale snelheid op nul zodra je er met je hoofd tegenaan komt, dus je stopt dood tegen de onderkant; het blok zelf schiet met `$fe` omhoog en is na `BlockBounceTimer` ($10 frames) terug op zijn plek. Wat erin zit komt eruit: een stempel wordt meteen bijgeschreven (`GiveOneCoin` doet dat op het moment van tevoorschijn komen, dus het ding dat omhoog vliegt is louter vertoon) en een paddenstoel komt bovenop het blok te staan. Een gewone baksteen zonder inhoud breekt als je groot bent en rammelt alleen als je klein bent; `BrickShatter` laat je daarbij op `$fe` doorstijgen in plaats van je stil te zetten. Blokken zijn ook gewoon vloer: je kunt erop staan, en een kapotte niet meer.
 
 Twee details die vaak verkeerd worden nagemaakt: SMB1 varieert de spronghoogte door bij het loslaten van de knop naar de _zware valzwaartekracht_ om te schakelen (niet door de opwaartse snelheid af te kappen), en de sprongboog wordt gekozen uit een tabel van vijf rijen op basis van je snelheid bij het afzetten: hard rennen springt hoger én strakker.
 
@@ -55,17 +58,17 @@ De context wordt pas bij de eerste toetsaanslag aangemaakt, omdat browsers weige
 
 ## Structuur
 
-| Map                             | Wat                                                                                                                                                                                                                         |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/physics.ts`                | De regels van de wereld per frame: versnellen, springen, vallen, landen, vijanden. Losse, pure functies die elk apart getest worden.                                                                                        |
-| `src/engine.ts`                 | De state machine eromheen (`step(state, input, levels)`): welk scherm, welk level, wanneer de physics-regels gelden. Levels worden meegegeven, niet geïmporteerd, zodat tests synthetische levels kunnen gebruiken.         |
-| `src/levels.ts`                 | Leveldata. Platforms krijgen een naam; vijanden en het certificaat worden _op_ een platform geplaatst (`enemyOn`, `certificateOn`, `startOn`), dus een platform verplaatsen verplaatst alles wat erop staat mee.            |
-| `src/level-builders.ts`         | Die plaatsingshelpers plus de maten van speler/vijand/certificaat, die de engine ook gebruikt.                                                                                                                              |
-| `src/render.ts`                 | Gedeelde tekencode (scène, sprites, kleuren), gebruikt door zowel het spel als de AI-console.                                                                                                                               |
-| `src/sprites.ts`, `src/font.ts` | Origineel handgetekende pixel-art en het bitmap-font.                                                                                                                                                                       |
-| `src/main.ts`                   | Dunne browser-shell: toetsen → `Input`, loop, schermen. Geen physics.                                                                                                                                                       |
-| `src/agent/`                    | De test- en AI-tooling. Eigen map met een eigen richting: hij importeert de engine, de levels en de renderer, maar niets in `src/` importeert ooit iets uit `src/agent/`, behalve de lazy import van de console.            |
-| `test/`                         | Unit tests (Node's ingebouwde test runner, geen extra framework), inclusief controles op leveldata en pixel-art: niets zweeft, vijanden lopen niet van hun platform, sprites zijn rechthoekig en even groot als hun hitbox. |
+| Map                             | Wat                                                                                                                                                                                                                                                                           |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/physics.ts`                | De regels van de wereld per frame: versnellen, springen, vallen, landen, vijanden. Losse, pure functies die elk apart getest worden.                                                                                                                                          |
+| `src/engine.ts`                 | De state machine eromheen (`step(state, input, levels)`): welk scherm, welk level, wanneer de physics-regels gelden. Levels worden meegegeven, niet geïmporteerd, zodat tests synthetische levels kunnen gebruiken.                                                           |
+| `src/levels.ts`                 | Leveldata. Platforms krijgen een naam; vijanden en het certificaat worden _op_ een platform geplaatst (`enemyOn`, `certificateOn`, `startOn`), dus een platform verplaatsen verplaatst alles wat erop staat mee. Blokkenrijen staan als plaatje: `blockRow(600, 160, "b?b")`. |
+| `src/level-builders.ts`         | Die plaatsingshelpers plus de maten van speler/vijand/certificaat, die de engine ook gebruikt.                                                                                                                                                                                |
+| `src/render.ts`                 | Gedeelde tekencode (scène, sprites, kleuren), gebruikt door zowel het spel als de AI-console.                                                                                                                                                                                 |
+| `src/sprites.ts`, `src/font.ts` | Origineel handgetekende pixel-art en het bitmap-font.                                                                                                                                                                                                                         |
+| `src/main.ts`                   | Dunne browser-shell: toetsen → `Input`, loop, schermen. Geen physics.                                                                                                                                                                                                         |
+| `src/agent/`                    | De test- en AI-tooling. Eigen map met een eigen richting: hij importeert de engine, de levels en de renderer, maar niets in `src/` importeert ooit iets uit `src/agent/`, behalve de lazy import van de console.                                                              |
+| `test/`                         | Unit tests (Node's ingebouwde test runner, geen extra framework), inclusief controles op leveldata en pixel-art: niets zweeft, vijanden lopen niet van hun platform, sprites zijn rechthoekig en even groot als hun hitbox.                                                   |
 
 Binnen `src/agent/` heeft elk bestand één taak: `run.ts` bepaalt wanneer een run stopt en wat hij opleverde, `policy.ts` is het netwerk, `evolution.ts` en `reinforce.ts` zijn de twee leermethodes, `training-view.ts` is één trainingssessie plus zijn scherm, `network-view.ts` tekent het netwerk, `chart.ts` de leercurve, en `console.ts` kiest alleen nog wat je bekijkt.
 
@@ -107,7 +110,7 @@ De vorige versie gaf een bonus per overleefd frame. Onder die regel scoorde een 
 
 Een run stopt zodra hij **180 frames lang niet dichter bij het certificaat is gekomen**. De leveltimer zou in theorie ook kunnen aflopen, maar 400 eenheden is 9600 frames: veel te laat om nog iets te betekenen. Die stilstandsdetectie is ook wat het trainen sneller maakt, want hij snijdt de doelloze runs meteen af.
 
-Het genetisch algoritme draait op een **vaste seed** (mulberry32 in `src/agent/random.ts`), dus `npm run train-agent` levert twee keer exact dezelfde agent op. Daarvoor was het gokwerk: dezelfde opdracht gaf de ene keer zes oplossers op level 1 en de volgende keer nul, en wat er in de repo belandde was toevallig de laatste run.
+Het genetisch algoritme draait op een **vaste seed** (mulberry32 in `src/agent/random.ts`), dus `npm run train-agent` levert twee keer exact dezelfde agent op. Het doet per level drie herstarts met opeenvolgende seeds en houdt de beste, want evolutie loopt vast en of ze vastloopt hangt van de seed af: op de ene seed kwam level 2 op 616 frames uit waar een andere 542 vond. Drie herstarts kosten twee en een halve minuut en halen dat toeval uit wat er gecommit wordt. Daarvoor was het gokwerk: dezelfde opdracht gaf de ene keer zes oplossers op level 1 en de volgende keer nul, en wat er in de repo belandde was toevallig de laatste run.
 
 De opgeslagen gewichten _zijn_ de opname: de engine is deterministisch, dus een genome speelt altijd exact dezelfde run. Ze staan op vier decimalen, wat een tanh-netwerk niet merkt en het bestand van 390 kB naar ongeveer 320 kB brengt (17 kB gzipped) terwijl er nu 100 in plaats van 60 generaties in zitten.
 
@@ -119,7 +122,9 @@ In de browser scoort de trainer **één kandidaat per keer** in plaats van een h
 
 Er zit ook **behaviour cloning** in (`src/agent/clone.ts`), en dat is het controle-experiment voor de hele AI-kant. Neem de beste agent die er is, schrijf op wat hij in elke toestand deed, en leer een vers netwerk dat na te doen met gewone supervised gradiëntafdaling. De leraar is een netwerk van precies dezelfde vorm, dus de leerling kán hem in principe exact evenaren.
 
-Dat lukt ook: na 2000 passes over de lessen haalt de leerling op alle drie de levels **exact de score van zijn leraar** (3296, 3258, 3230). Daarmee is zwart op wit dat de architectuur en de features de policy gradient nooit in de weg zaten; het zat volledig in het leersignaal. Een test eist dat de leerling de leraar precies evenaart en niet slechts benadert.
+Alleen de eigen run van de leraar naschrijven bleek niet genoeg. De lessen dekken dan uitsluitend de toestanden waar de leraar is geweest, en zodra de leerling een pixel afwijkt krijgt hij vragen over plekken waar niemand hem iets over verteld heeft. Dat is de klassieke zwakte van klonen, en de klassieke oplossing staat er nu in: na elke generatie wordt de run van de _leerling_ nagelopen en bij elk frame aan de leraar gevraagd wat hij daar gedaan zou hebben. Die correcties gaan bij de lessen, met de laatste vijf runs in beeld. Dat heet DAgger.
+
+Daarmee haalt de leerling op alle drie de levels **exact de score van zijn leraar** (3296, 3258, 3230). Zonder die correcties bleef level 1 op 16 frames achterstand steken en kwamen 2 en 3 er niet eens in de buurt: op level 2 liep de leerling tot 43px van het certificaat en viel daar stil. Dat de architectuur en de features de policy gradient nooit in de weg zaten blijft daarmee staan; het zat in het leersignaal. Een test eist dat de leerling de leraar op level 1 precies evenaart en niet slechts benadert.
 
 Een detail dat het waard is om te noemen: met 100 passes bleef de fout op 0,08 steken en speelde de leerling geen enkel level uit. Dat is geen toeval maar rekenwerk: een knop zit achter een drempel van 0,2, en een gemiddelde fout van die orde draait precies op de verkeerde momenten een druk om. Pas als de fout een orde kleiner is dan de drempel volgt de leerling het pad van de leraar.
 
@@ -133,7 +138,7 @@ Hij leert wel, maar hij wint niet, en de weg daarnaartoe was leerzamer dan het r
 | 2     | −518                                     | **−167** (update 61)   | nooit    |
 | 3     | −1488                                    | **−661** (update 16)   | nooit    |
 
-Die getallen zijn van één seed. Over drie seeds loopt level 1 uiteen van −121 tot −1268, wat de spreiding is die bij REINFORCE hoort en de reden dat het de ene keer lijkt te werken en de andere keer niets lijkt te doen. Ter ijking: recht onder het certificaat staan is ongeveer −618 op level 1, en erbovenop −112, dus op zijn best staat hij er letterlijk bovenop zonder hem te pakken. Hij komt dus ruim voorbij de eerste vijand en het grootste deel van het level door, maar maakt de laatste klim niet af. De curve is grillig: hij vindt een goede policy en loopt er daarna weer vanaf, wat bij REINFORCE hoort. De opname bewaart de beste, dus "bekijk beste run" laat wel zien wat hij op zijn best kon.
+Die getallen zijn van de kale versie van het spel, vóór de koopa's en de blokken; met de huidige levels staat REINFORCE op −393, −637 en −1161. Ze zijn ook van één seed: over drie seeds liep level 1 uiteen van −121 tot −1268, wat de spreiding is die bij REINFORCE hoort en de reden dat het de ene keer lijkt te werken en de andere keer niets lijkt te doen. Ter ijking: recht onder het certificaat staan is ongeveer −618 op level 1, en erbovenop −112, dus op zijn best staat hij er letterlijk bovenop zonder hem te pakken. Hij komt dus ruim voorbij de eerste vijand en het grootste deel van het level door, maar maakt de laatste klim niet af. De curve is grillig: hij vindt een goede policy en loopt er daarna weer vanaf, wat bij REINFORCE hoort. De opname bewaart de beste, dus "bekijk beste run" laat wel zien wat hij op zijn best kon.
 
 Belangrijk bij het lezen van die grafiek: een generatie wordt gescoord met de policy **zonder** verkenningsruis, want dat is de agent die het opgeslagen genome beschrijft. Dat was eerst niet zo, en dat maakte het beeld onwaar: de grafiek meldde een opgelost level zodra de ruis een keer geluk had, terwijl de agent zelf nog tegen dezelfde vijand aanliep. Een test eist nu van beide leermethodes dat een opgeslagen genome zijn eigen opgeslagen fitness reproduceert.
 
@@ -145,10 +150,10 @@ Wat er overblijft is waarom hij het laatste stuk niet haalt, en dat is wél de t
 
 | gewicht met 0,01 verschuiven | verandert de uitkomst niet |
 | ---------------------------- | -------------------------- |
-| willekeurig genome           | 63 van de 131              |
-| getraind genome              | **131 van de 131**         |
+| willekeurig genome           | 69 tot 131 van de 131      |
+| getraind genome              | **117 van de 131**         |
 
-Ik heb geprobeerd dat laatste stuk alsnog te halen: ruis vasthouden over meerdere frames, de verkenning laten aflopen, grotere batches, meer updates (tot 400) en stapgroottes over twee ordes van grootte. Geen van alle levert een uitgespeeld level op, en de verkenning laten aflopen hielp level 1 terwijl het 2 en 3 juist schaadde, wat afstellen op ruis is. Bij een getraind genome verandert er van een stapje van 0,01 op wélk gewicht dan ook niets aan hoe de run afloopt; zelfs bij 0,1 geldt dat nog voor 90%. Een knop is namelijk een drempel: `rechts` is `output > 0,2`, dus zolang die niet wordt overschreden ziet het spel geen verschil. Voor het grove werk (naar rechts, over een vijand heen) is er genoeg spreiding tussen episodes om een richting uit te halen; voor de precieze laatste sprong is de opbrengst een trap en geen helling, en daar loopt een gradiënt vast waar evolutie gewoon de gelukkige mutatie bewaart.
+Ik heb geprobeerd dat laatste stuk alsnog te halen: ruis vasthouden over meerdere frames, de verkenning laten aflopen, grotere batches, meer updates (tot 400) en stapgroottes over twee ordes van grootte. Geen van alle levert een uitgespeeld level op, en de verkenning laten aflopen hielp level 1 terwijl het 2 en 3 juist schaadde, wat afstellen op ruis is. Bij een getraind genome verandert een stapje van 0,01 voor 117 van de 131 gewichten niets aan hoe de run afloopt, en bij 0,1 nog voor 111. Dat was ooit 131 van de 131: sinds er blokken in de wereld staan zijn er meer dingen om langs te schampen, dus een duwtje heeft meer manieren om de run ergens anders te laten eindigen zonder dat de agent iets anders _doet_. Een knop is namelijk een drempel: `rechts` is `output > 0,2`, dus zolang die niet wordt overschreden ziet het spel geen verschil. Voor het grove werk (naar rechts, over een vijand heen) is er genoeg spreiding tussen episodes om een richting uit te halen; voor de precieze laatste sprong is de opbrengst een trap en geen helling, en daar loopt een gradiënt vast waar evolutie gewoon de gelukkige mutatie bewaart.
 
 Die eigenschap staat als test in `test/reinforce.test.ts`, samen met een numerieke controle van de backpropagatie tegen eindige differenties. De gradiënt is dus aantoonbaar correct; het ging mis in wat ik hem te eten gaf.
 
@@ -158,7 +163,7 @@ Drie fouten onderweg, alle drie in code die volkomen normaal leest. Ruis op de g
 
 De andere vijf jagen op één beste agent. **MAP-Elites** (`src/agent/map-elites.ts`) vult een raster van gedragingen en bewaart per vakje de beste agent die zich zó gedroeg. De assen zijn hoe ver hij kwam en hoe hoog hij ooit klom, precies de twee dingen die de pogingen op het scherm van elkaar onderscheiden. Een vakje gaat alleen vooruit, nooit achteruit, dus een vreemde eend die hoog kwam maar slecht scoorde wordt niet weggefokt zoals in een gewone populatie.
 
-Met hetzelfde evaluatiebudget als de GA speelt hij alle drie de levels uit (3296, 3258, 3193 tegen 3296, 3258, 3230) en levert er 72, 83 en 58 gevulde gedragsvakjes bij. Kies **archief** in het menu om het raster te zien: kleur is kwaliteit, geel omrand betekent dat die agent het certificaat haalt, en klikken speelt hem af.
+Met hetzelfde evaluatiebudget als de GA speelt hij alle drie de levels uit (3296, 3258, 3214 tegen 3296, 3258, 3230) en levert er 70, 79 en 55 gevulde gedragsvakjes bij. Kies **archief** in het menu om het raster te zien: kleur is kwaliteit, geel omrand betekent dat die agent het certificaat haalt, en klikken speelt hem af.
 
 Eén meetles die het vermelden waard is. Met een kwart van het budget haalde hij geen enkel level en kwam level 1 op −39; met een gelijk budget haalt hij ze alle drie. De eerste meting zei dus niets over de methode en alles over wat ik hem gaf.
 
@@ -170,16 +175,16 @@ Over negen volledige runs per methode (drie levels, drie seeds):
 
 |           | opgelost | beste run  | gesimuleerde frames |
 | --------- | -------- | ---------- | ------------------- |
-| CMA-ES    | 7 van 9  | 585 frames | **9,8M**            |
-| gewone GA | 7 van 9  | 558 frames | 29,7M               |
+| CMA-ES    | 8 van 9  | 504 frames | **10,1M**           |
+| gewone GA | 9 van 9  | 504 frames | 27,9M               |
 
-Even vaak raak, vrijwel dezelfde snelheid, met **een derde van het rekenwerk**. Dat is precies wat een slimmere zoeker hoort op te leveren. Wat opvalt bij het lezen van de grafiek: CMA-ES zet zijn _gemiddelde_ neer als de agent van die generatie, waar de GA de beste van tachtig neerzet. Dat eerste is een strengere uitspraak, want het gemiddelde is wat het algoritme daadwerkelijk gelooft.
+Eén run minder raak, dezelfde snelheid, met **een derde van het rekenwerk**. Dat is precies wat een slimmere zoeker hoort op te leveren. Wat opvalt bij het lezen van de grafiek: CMA-ES zet zijn _gemiddelde_ neer als de agent van die generatie, waar de GA de beste van tachtig neerzet. Dat eerste is een strengere uitspraak, want het gemiddelde is wat het algoritme daadwerkelijk gelooft.
 
 ### Q-learning, de eerlijke tweede kans
 
 De policy gradient stuurt drie continue getallen door drempels, en juist daar komt de trap vandaan. **Q-learning** (`src/agent/dqn.ts`) heeft dat probleem per constructie niet: het netwerk schat wat elk van de **twaalf knopcombinaties** waard is en de agent neemt de hoogste. Elke verandering die de volgorde omgooit verandert de actie, en elke verandering die dat niet doet is ook echt zonder gevolg. Compleet met replay buffer, een bevroren kopie voor de doelwaarden en epsilon die van 1 naar 0,05 loopt.
 
-Het werkt beter dan REINFORCE en nog steeds niet goed genoeg: level 1 komt op **−104**, het beste dat een lerende methode hier haalt, en op het platform bij het certificaat staan is −112. Hij staat er dus bovenop en pakt hem niet.
+Dat hielp, tot er koopa's en blokken bij kwamen. Op de kale versie van het spel kwam level 1 op **−104**, het beste dat een lerende methode hier haalde, en op het platform bij het certificaat staan is −112: hij stond er dus bovenop en pakte hem niet. Met de huidige levels staat hij op −790, −713 en −1193. Een schild dat weer opstaat en blokken om tegenaan te springen maken de wereld duidelijk moeilijker voor hem, en dat het cijfer zó ver terugvalt zegt vooral dat die −104 fijner afgestemd was op precies dát level dan ik dacht.
 
 Eén getal maakte daar het meeste verschil, en het was niet de leersnelheid. Met de gebruikelijke discount van 0,99 is een beloning 400 frames verderop nog 0,018 waard: de agent kán het certificaat vanaf de start niet zien. Op 0,999 reikt de horizon over het hele level en ging het van −143 naar −104.
 

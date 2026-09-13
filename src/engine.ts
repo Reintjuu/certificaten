@@ -8,17 +8,32 @@ import {
   PHYSICS,
   clamp,
   createEnemies,
+  createBlocks,
   createMushrooms,
   createPlayer,
   overlaps,
   stepWorld,
 } from "./physics";
-import type { Enemy, Input, Mushroom, Player } from "./physics";
+import type { Block, Enemy, Input, Mushroom, Player } from "./physics";
 
 export { LEVELS };
 export type { Level };
-export { CANVAS_W, CANVAS_H, PHYSICS, NO_INPUT, EnemyKind, EnemyState, isActive, isVisible } from "./physics";
-export type { Player, Enemy, Input, Direction } from "./physics";
+export {
+  CANVAS_W,
+  CANVAS_H,
+  PHYSICS,
+  NO_INPUT,
+  BlockKind,
+  BlockContents,
+  BlockState,
+  EnemyKind,
+  EnemyState,
+  isActive,
+  isSolid,
+  isVisible,
+  surfacesOf,
+} from "./physics";
+export type { Block, Player, Enemy, Input, Direction } from "./physics";
 
 /** The blink cycle for "PRESS START" and the dialogue arrow. */
 export const BLINK_PERIOD_FRAMES = 60;
@@ -32,6 +47,9 @@ export type GameState = {
   player: Player;
   enemies: Enemy[];
   mushrooms: Mushroom[];
+  blocks: Block[];
+  /** Stamps collected, which is SMB1's coin tally under a duller name. */
+  coins: number;
   dialogueLines: string[];
   dialogueIndex: number;
   dialogueKind: DialogueKind;
@@ -70,6 +88,8 @@ export function createPlayingState(levelIndex: number, levels: Level[] = LEVELS)
     player: createPlayer(level.playerStart),
     enemies: createEnemies(level.enemies),
     mushrooms: createMushrooms(level.mushrooms),
+    blocks: createBlocks(level.blocks),
+    coins: 0,
     dialogueLines: [],
     dialogueIndex: 0,
     dialogueKind: "intro",
@@ -90,6 +110,7 @@ function resetLevel(state: GameState, levels: Level[]): void {
   state.player = createPlayer(level.playerStart);
   state.enemies = createEnemies(level.enemies);
   state.mushrooms = createMushrooms(level.mushrooms);
+  state.blocks = createBlocks(level.blocks);
   state.cameraX = 0;
   state.timeRemaining = level.timeLimit;
   state.gameTimerTicks = PHYSICS.gameTimerFrames;
@@ -133,10 +154,16 @@ function stepPlaying(state: GameState, input: Input, levels: Level[]): void {
   const framerule = advanceFramerule(state);
   advanceGameTimer(state);
 
-  const { died } = stepWorld(state.player, state.enemies, state.mushrooms, level, input, {
-    cameraX: state.cameraX,
-    framerule,
-  });
+  const { died, coins } = stepWorld(
+    state.player,
+    state.enemies,
+    state.mushrooms,
+    state.blocks,
+    level,
+    input,
+    { cameraX: state.cameraX, framerule }
+  );
+  state.coins += coins;
   updateCamera(state, level);
 
   if (died || state.timeRemaining <= 0) {

@@ -21,7 +21,7 @@ const TOURNAMENT_SIZE = 4;
 const MUTATION_RATE = 0.12;
 const MUTATION_SCALE = 0.6;
 /** Fixed so `npm run train-agent` reproduces the recording in the repo. */
-const TRAINING_SEED = 20260910;
+export const TRAINING_SEED = 20260910;
 
 export type GenerationRecord = {
   generation: number;
